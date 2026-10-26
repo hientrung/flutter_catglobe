@@ -1,0 +1,24 @@
+name: catglobe_dev
+description: Local development bridge and deployment tools for Catglobe Flutter projects.
+version: 0.1.0
+repository: https://github.com/hientrung/flutter_catglobe
+issue_tracker: https://github.com/hientrung/flutter_catglobe/issues
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+dependencies:
+  args: ^2.6.0
+  crypto: ^3.0.6
+  http: ^1.3.0
+  path: ^1.9.1
+dev_dependencies:
+  test: ^1.25.15
+executables:
+  catglobe_dev:
+topics:
+  - development
+  - cli
+  - oauth
+platforms:
+  windows:
+  linux:
+  macos:

@@ -1,0 +1,11 @@
+.dart_tool/
+.agent/
+.git/
+build/
+coverage/
+pubspec.lock
+AGENTS.md
+*.log
+*.tmp
+*.lock
+*.pem
