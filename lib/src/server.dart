@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'auth.dart';
 import 'config.dart';
+import 'dynamicrun.dart';
 import 'web.dart';
 
 typedef DeploymentScriptBuilder = String Function(ProjectConfig config,
@@ -88,7 +89,7 @@ class DevelopmentServer {
           if (bytes.length > 1024 * 1024) throw StateError('Request too large');
         }
         final body = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-        Object result = {'ok': true};
+        Object? result = {'ok': true};
         switch (request.uri.path) {
           case '/api/configs':
             final config = ProjectConfig(body);
@@ -178,7 +179,9 @@ class DevelopmentServer {
       }
     } catch (error) {
       response.statusCode = 400;
-      response.write(jsonEncode({'error': error.toString()}));
+      response.write(jsonEncode({
+        'error': error is DynamicRunException ? error.error : error.toString(),
+      }));
     } finally {
       await response.close();
     }
@@ -200,7 +203,7 @@ class DevelopmentServer {
     return Directory(directory);
   }
 
-  Future<Object> _runScript(ProjectConfig config, String script) async {
+  Future<Object?> _runScript(ProjectConfig config, String script) async {
     if (!auth.authenticated(config.id))
       throw StateError('Login required or session expired');
     final issuer = Uri.parse(config.value('issuer'));
@@ -224,10 +227,6 @@ class DevelopmentServer {
     final content = await response.stream
         .bytesToString()
         .timeout(const Duration(seconds: 60));
-    return {
-      'success': response.statusCode >= 200 && response.statusCode < 300,
-      'status': response.statusCode,
-      'body': content
-    };
+    return parseDynamicRunResponse(content, response.statusCode);
   }
 }
