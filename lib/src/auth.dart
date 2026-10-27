@@ -28,6 +28,11 @@ class Authentication {
   String? accessToken;
   String? configId;
   DateTime? expiresAt;
+  String? _refreshToken;
+  String? _clientId;
+  Uri? _tokenEndpoint;
+  Future<String>? _refreshing;
+  int _generation = 0;
 
   bool authenticated(String id) =>
       configId == id &&
@@ -36,6 +41,11 @@ class Authentication {
       DateTime.now().isBefore(expiresAt!);
 
   void clear() {
+    _generation++;
+    _refreshing = null;
+    _refreshToken = null;
+    _clientId = null;
+    _tokenEndpoint = null;
     pending = null;
     accessToken = null;
     configId = null;
@@ -110,15 +120,69 @@ class Authentication {
       throw StateError(
           'Token exchange failed (${response.statusCode}); verify public client settings');
     final token = jsonDecode(response.body) as Map<String, dynamic>;
+    _applyToken(token);
+    _clientId = attempt.config.value('clientId');
+    _tokenEndpoint = Uri.parse(attempt.metadata['token_endpoint'] as String);
+    configId = attempt.config.id;
+    // ID tokens are deliberately not used as identity assertions.
+  }
+
+  void _applyToken(Map<String, dynamic> token) {
     if (token['token_type']?.toString().toLowerCase() != 'bearer' ||
         token['access_token'] is! String ||
-        token['expires_in'] is! num) {
+        (token['access_token'] as String).isEmpty ||
+        token['expires_in'] is! num ||
+        (token['expires_in'] as num) <= 0 ||
+        (token.containsKey('refresh_token') &&
+            (token['refresh_token'] is! String ||
+                (token['refresh_token'] as String).isEmpty))) {
       throw StateError('Unsupported token response');
     }
     accessToken = token['access_token'] as String;
     expiresAt = DateTime.now()
         .add(Duration(seconds: (token['expires_in'] as num).toInt()));
-    configId = attempt.config.id;
-    // ID tokens are deliberately not used as identity assertions.
+    if (token['refresh_token'] is String)
+      _refreshToken = token['refresh_token'] as String;
+  }
+
+  Future<String> validAccessToken(String id) async {
+    if (configId != id) throw StateError('Login required');
+    final canRefresh =
+        _refreshToken != null && _tokenEndpoint != null && _clientId != null;
+    if (authenticated(id) &&
+        (!canRefresh ||
+            expiresAt!
+                .isAfter(DateTime.now().add(const Duration(seconds: 30))))) {
+      return accessToken!;
+    }
+    if (!canRefresh) throw StateError('Login required or session expired');
+    final pending = _refreshing;
+    if (pending != null) return pending;
+    final future = _refresh(_generation);
+    _refreshing = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_refreshing, future)) _refreshing = null;
+    }
+  }
+
+  Future<String> _refresh(int generation) async {
+    final response = await client.post(_tokenEndpoint!, body: {
+      'grant_type': 'refresh_token',
+      'client_id': _clientId!,
+      'refresh_token': _refreshToken!,
+    }).timeout(const Duration(seconds: 30));
+    if (generation != _generation)
+      throw StateError('Login session changed during refresh');
+    final token = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      if (token['error'] == 'invalid_grant' ||
+          token['error'] == 'invalid_client') clear();
+      throw StateError(
+          'Unable to refresh access token (${response.statusCode}); log in again if the session was revoked');
+    }
+    _applyToken(token);
+    return accessToken!;
   }
 }

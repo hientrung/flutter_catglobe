@@ -69,7 +69,12 @@ No client secret is used. Scopes are fixed to
 `email profile roles openid offline_access`; the client must
 be granted these permissions. Access tokens remain in memory, expire according to
 the provider response, and are cleared when switching/editing config or logging out.
-Log in again on expiry. Refresh tokens are not persisted or used in this version.
+Refresh tokens returned with `offline_access` are kept only in memory. Before
+console execution and each upload, tokens expiring within 30 seconds are renewed
+at the discovered token endpoint. Rotated refresh tokens replace the previous
+value; concurrent requests share one refresh. Logout/config changes discard both
+tokens. If refresh permission is revoked or no refresh token was issued, log in
+again. An in-flight refresh cannot restore a logged-out session.
 Local logout does not end the identity provider's browser session.
 
 This version uses OAuth access tokens to authorize API calls. It does not expose
@@ -79,8 +84,8 @@ an authenticated user identity or validate/use ID tokens as identity assertions.
 
 CGScript execution always uses `/api/cgscript/dynamicrun` on the issuer server;
 the endpoint and scopes cannot be edited. Old config overrides are ignored.
-Deployment also runs CGScript through the same `dynamicrun` endpoint to upload
-and write files. There is no separate remote deployment endpoint or setting.
+Deployment creates and updates resources through `dynamicrun`; build assets
+are uploaded separately through `/api/files/upload/{saveAs}`.
 The dynamicrun request uses the payload below. CGScript upload/write functions
 and response handling still require server integration verification.
 POST redirects are disabled.
@@ -98,26 +103,158 @@ next visit using the same browser and localhost port, including after login.
 Configuration editing is shown only for New/Edit and hidden after saving.
 A single Login/Logout button reflects the current authentication state.
 
+### Run a local workflow from Flutter
+
+After selecting a project in the management console, call
+`POST http://localhost:5000/api/cgscript/run/Folder/Name` with a JSON body.
+The name is relative to `scriptDirectory`, without `.cgs`, `@userId` or `.public`.
+URL-encode each name segment when it contains spaces or non-ASCII characters.
+Set `Content-Type: application/json` and `Authorization: Bearer <access_token>`
+using the Flutter app's Catglobe access token. The local API forwards this token
+to Catglobe for authentication and execution; it does not use the console login
+session or require `X-Cg-Token` for this route.
+The Flutter app owns renewal of its caller-supplied token: the local API does not
+have that caller's refresh token and never substitutes a console session token.
+Flutter Web preflights and requests from localhost/loopback origins are supported.
+
+```dart
+final response = await http.post(
+  Uri.parse('http://localhost:5000/api/cgscript/run/Folder/Name'),
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer $accessToken',
+  },
+  body: jsonEncode({'customerId': 123}),
+);
+```
+
+The local bridge forwards the JSON body directly as dynamicrun's `Parameter`.
+Both Catglobe endpoints wrap this value once, so the script receives it at
+`Workflow_getParameters()[0]`. With `?expandParameters=true`, send an array of
+positional arguments instead. Local responses preserve Catglobe's HTTP status
+and complete `{result, error}` JSON envelope, including script errors returned
+with HTTP 200. Source files are reloaded on each call.
+
+### One Flutter call for debug and deployed apps
+
+For runtime use, add `catglobe_dev` under `dependencies` and import the web-safe
+client library (the management/CLI library imports `dart:io`):
+
+```dart
+import 'package:flutter/foundation.dart';
+import 'package:catglobe_dev/catglobe_client.dart';
+
+final workflows = CatglobeWorkflowClient(
+  debug: kDebugMode,
+  // Set this if the production API is on another origin; defaults to Uri.base.
+  // issuer: Uri.parse('https://your-site.catglobe.com/'),
+  accessToken: () => authentication.getValidAccessToken(),
+);
+
+final result = await workflows.run('Folder/Name', {'customerId': 123});
+// workflows.close() when the owning service is disposed.
+```
+
+`authentication.getValidAccessToken()` above represents your app's existing
+authentication provider. The callback is invoked for every call. In debug, the
+client POSTs to `http://localhost:5000/api/cgscript/run/Folder/Name`. Outside debug,
+it reads `globalThis.catglobeWorkflowIds` injected into the deployed Dashboard and
+POSTs to `/api/cgscript/run/<id>` on the issuer. An explicit `workflowIds` map can
+also be supplied. Release mode fails if a mapping is missing; it never falls back
+to a local filename. Both modes send the identical JSON body and decode the same
+Catglobe envelope into the return value or `CgScriptException`.
+
+When the deployed web app uses the issuer's same-origin browser login session,
+the access-token callback may be omitted online. Debug requests require the
+caller's access token because the localhost bridge does not receive issuer cookies.
+
+`ScriptRewriter` is the shared rule pipeline with explicit `local` and `deploy`
+modes. Local mode recursively replaces `new WorkflowScript("Folder/A")` with
+`new WorkflowScript("escaped source of A", false)`. It rejects missing files,
+duplicate logical names and cycles with the full dependency chain before making
+the remote call. Shared dependencies without cycles are allowed. Deployment mode
+uses resource IDs, so deployed workflows can still have cyclic references.
+Comments, literals and constructors already using numeric IDs or inline code are
+preserved. Expansion is limited to 100 nesting levels and 10 MiB of source.
+Local API execution uses the account identified by the caller's access token; filename impersonation/public settings
+apply when creating deployed Workflow resources.
+
+The UI textarea also passes through `ScriptRewriter` in local mode, so test code
+can call `new WorkflowScript("Folder/Name")` directly. It uses the console login
+session, with the same missing-reference and cycle checks as the local API.
+
 Build deployment has explicit `test` (review) and `production` (customer release)
 modes. The local deploy request includes `kind: "build"` and the selected `mode`;
 the server rejects missing or unknown modes.
 
-`DeploymentScriptBuilder` receives the config, deployment kind, mode, and local files
-as `{path, contentBase64}` records. It must generate the actual CGScript that
-uploads/writes these files under the configured root folder. That script is sent
-using the same request shape as ordinary execution. Until the Catglobe functions
-and syntax are supplied, the default CLI reports that this implementation is
-missing rather than sending an invented script or a raw file manifest to dynamicrun.
+The built-in `CatglobeDeployment` orchestrator requires a positive `rootFolderId`.
+It scans `.cgs` files recursively from `scriptDirectory` (default `cgscript`).
+`Folder/Name@123.public.cgs` becomes workflow `Name` in subfolder `Folder`,
+with lookup key `Folder/Name` and impersonated user 123. Both suffixes are
+optional, but `.public` requires a positive `@userId`. Duplicate lookup keys and
+missing named dependencies fail before any remote writes.
 
-The UI exposes Test and Production build deployment for this integration. The
-builder must implement the actual server destination/release behavior for each
-mode; selecting a mode alone does not implement server-side review or promotion.
-With a
-deployment script builder supplied, files are read recursively,
-symlinks are skipped, and deployments are capped at 50 MiB before base64 encoding.
-Run `flutter build web` in the consumer project first: this tool uploads existing
-build output and does not invoke a build. Remote responses are shown in the UI.
-There is no automatic rollback or server-side atomic deployment guarantee.
+Test workflows live below `Test Script`; production workflows below `Live Script`.
+Resources are reused by exact name, type and direct parent, preserving their IDs
+on repeated deployments. The orchestrator first reserves all workflows, then
+replaces `new WorkflowScript("Folder/Name")` references with numeric IDs and
+updates code and impersonation. Cyclic references work. Comments, string literals
+and existing numeric references are preserved. References use paths relative to
+the script root, without `.cgs` or metadata suffixes.
+
+Build deployment creates/reuses `Test portal` or `Live portal` under the root.
+The Dashboard layout receives `index.html` with
+`globalThis.catglobeWorkflowIds` injected before Flutter bootstrap and a base URL
+for its assets. The same map is uploaded as `catglobe-workflows.js`. Consumers
+must read this JavaScript global when resolving workflow names in deployed apps.
+All remaining build files retain their relative paths and exact bytes and are
+passed to the uploader together with the Dashboard ID.
+
+For `.public` workflows, deployment looks up `User_getUserByUsername("anonymous")`
+and grants that user's resource ID `Access` on the Workflow through
+`updateUserResourceIdPermission`. Missing anonymous users cause public deployment
+to fail. The `@userId` remains the workflow's impersonated user and is independent
+of the anonymous account. Without `.public`, deployment sets the anonymous user's
+direct permission to `None` when that account exists; inherited/group permissions
+are not changed. The deploying account needs FullControl on the Workflow to
+update its permissions.
+
+The stock CLI uses `CgsFileUploader` and flat asset mapping. Optional custom
+`DeploymentAssets` implementations can override anonymous permission scripts
+and upload using a directory URL via `DevelopmentServer(deploymentAssets: ...)`.
+Script-only deployment is available through `CatglobeDeployment.deploy` with
+`includeBuild: false`.
+
+The legacy `DeploymentScriptBuilder` override remains available for custom sites;
+when supplied it bypasses the built-in orchestrator.
+
+`CgsFileUploader` implements the site's `POST /api/files/upload/{saveAs}` contract:
+the body contains raw file bytes with `Content-Type: application/octet-stream`,
+and query parameters `overWrite=true` and `isTemp=false` select permanent storage.
+It sends the access token as a Bearer header, disables redirects and checks both
+HTTP status and the JSON `success`, `filename`, `isTemp` and `size` response. Filenames contain the Dashboard
+ID, SHA-256 of the complete relative path, and the original extension, avoiding
+collisions when the server sanitizes directory separators. Bytes are unchanged.
+Its `upload` returns a map of local paths to `/CgScript/File?file=...` download URLs.
+Empty files are supported by the raw-stream API.
+
+The default build deployment uploads through `CgsFileUploader`. It rewrites HTML
+asset attributes, CSS `url(...)` references and static/dynamic literal module
+imports in JavaScript. Before bootstrap, the Dashboard installs a map from a
+virtual build directory to actual query URLs. The bridge translates Flutter URL
+construction, fetch/XHR calls and dynamically assigned script/media URLs,
+including paths resolved relative to an uploaded module. No server folder route
+is required. External absolute URLs pass through. Binary files remain unchanged;
+only uploaded copies of text files are transformed. Local build files are untouched.
+
+Tests cover the mapping bridge and a simulated full deployment; no live Catglobe
+upload or full Flutter browser smoke test has been performed. Service-worker
+offline caching and arbitrary third-party worker loaders are not verified.
+
+Files are read recursively with symlinks skipped and each input directory capped
+at 50 MiB. Run `flutter build web` in the consumer project first; this tool uploads
+existing output. Deployment makes multiple remote calls and has no automatic
+rollback; an interrupted deployment can leave partially updated resources.
 
 ## Checks
 
