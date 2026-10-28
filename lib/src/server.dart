@@ -51,22 +51,11 @@ class DevelopmentServer {
         return;
       }
       if (request.method == 'GET' && request.uri.path == '/') {
-        response.headers.contentType = ContentType.html;
-        String scriptJson(String value) => jsonEncode(value)
-            .replaceAll('<', r'\u003c')
-            .replaceAll('>', r'\u003e')
-            .replaceAll('&', r'\u0026');
-        response.write(webPage
-            .replaceAll('__CSRF__', _csrf)
-            .replaceAll(
-                '__PROJECT_PATH_JSON__', scriptJson(Directory.current.path))
-            .replaceAll('__PROJECT_NAME_JSON__',
-                scriptJson(p.basename(Directory.current.path))));
+        _handleHome(response);
         return;
       }
       if (request.method == 'GET' && request.uri.path == '/auth/callback') {
-        await auth.complete(request.uri);
-        response.redirect(url);
+        await _handleAuthCallback(request);
         return;
       }
       response.headers.contentType = ContentType.json;
@@ -93,18 +82,7 @@ class DevelopmentServer {
         }
       }
       if (request.method == 'GET' && request.uri.path == '/api/configs') {
-        if (_selected != null && auth.configId == _selected!.id) {
-          try {
-            await auth.validAccessToken(_selected!.id);
-          } catch (_) {}
-        }
-        response.write(jsonEncode({
-          'projects': await store.read(),
-          'selected': _selected?.id,
-          'devApiToken': _csrf,
-          'authenticated':
-              _selected != null && auth.authenticated(_selected!.id)
-        }));
+        await _handleGetConfigs(response);
         return;
       }
       final bearer = RegExp(r'^Bearer\s+(\S+)$', caseSensitive: false)
@@ -131,116 +109,26 @@ class DevelopmentServer {
         }
         final payload = jsonDecode(utf8.decode(bytes));
         if (localRun) {
-          final config = _requireSelected();
-          final segments = request.uri.pathSegments;
-          final key = segments.skip(3).join('/');
-          if (key.isEmpty ||
-              segments.skip(3).any((s) =>
-                  s.isEmpty || s == '.' || s == '..' || s.contains('\\'))) {
-            throw FormatException('Invalid workflow name');
-          }
-          final script = await _rewriteLocal(config, key: key);
-          final expand = request.uri.queryParameters['expandParameters'];
-          if (expand != null && expand != 'true' && expand != 'false') {
-            throw FormatException('expandParameters must be true or false');
-          }
-          await _runScript(config, script,
-              parameters: payload,
-              scriptName: key,
-              bearerToken: bearer,
-              expandParameters: expand == 'true',
-              forwardTo: response);
+          await _handleLocalRun(request, payload, bearer);
           return;
         }
         final body = payload as Map<String, dynamic>;
         Object? result = {'ok': true};
         switch (request.uri.path) {
           case '/api/configs':
-            final config = ProjectConfig(body);
-            await store.save(config);
-            if (_selected?.id == config.id) {
-              _selected = config;
-              auth.clear();
-            }
+            await _handleSaveConfig(body);
           case '/api/delete':
-            final id = body['id'];
-            if (id is! String || id.isEmpty)
-              throw const FormatException('Configuration ID is required');
-            await store.delete(id);
-            if (_selected?.id == id) {
-              _selected = null;
-              auth.clear();
-            }
+            await _handleDeleteConfig(body);
           case '/api/select':
-            final id = body['id'];
-            final selected = id == ''
-                ? null
-                : (await store.read()).firstWhere((c) => c.id == id);
-            if (_selected?.id != selected?.id) auth.clear();
-            _selected = selected;
+            await _handleSelectConfig(body);
           case '/api/login':
-            final config = _requireSelected();
-            final redirect = url.resolve('/auth/callback').toString();
-            result = {'url': (await auth.begin(config, redirect)).toString()};
+            result = await _handleLogin();
           case '/api/logout':
-            auth.clear();
+            await _handleLogout();
           case '/api/run':
-            final config = _requireSelected();
-            final script = body['script'];
-            if (script is! String || script.trim().isEmpty) {
-              throw const FormatException('Enter a CGScript to run');
-            }
-            result = await _runScript(
-                config, await _rewriteLocal(config, source: script));
+            result = await _handleRun(body);
           case '/api/deploy':
-            final config = _requireSelected();
-            final kind = body['kind'];
-            if (kind != 'scripts' && kind != 'build')
-              throw StateError('Invalid deployment kind');
-            final mode = body['mode'];
-            if (mode != 'test' && mode != 'production') {
-              throw const FormatException(
-                  'Deployment mode must be test or production');
-            }
-            final builder = deploymentScriptBuilder;
-            if (builder == null) {
-              await auth.validAccessToken(config.id);
-              result = await CatglobeDeployment(
-                (script) => _runScript(config, script),
-                assets: deploymentAssets,
-                fileUploader: CgsFileUploader(
-                    auth.client, Uri.parse(config.value('issuer')),
-                    accessToken: () => auth.validAccessToken(config.id)),
-              ).deploy(config, mode as String, includeBuild: kind == 'build');
-              break;
-            }
-            final directory = await _localDirectory(
-                config,
-                config.value(
-                    kind == 'scripts' ? 'scriptDirectory' : 'buildDirectory'));
-            final files = <Map<String, String>>[];
-            var size = 0;
-            await for (final entity
-                in directory.list(recursive: true, followLinks: false)) {
-              if (entity is! File) continue;
-              final bytes = await entity.readAsBytes();
-              size += bytes.length;
-              if (size > 50 * 1024 * 1024)
-                throw StateError('Deployment exceeds 50 MiB');
-              files.add({
-                'path': p
-                    .relative(entity.path, from: directory.path)
-                    .split(p.separator)
-                    .join('/'),
-                'contentBase64': base64Encode(bytes)
-              });
-            }
-            if (files.isEmpty) throw StateError('No deployment files found');
-            final script =
-                builder(config, kind as String, mode as String, files);
-            if (script.trim().isEmpty)
-              throw StateError('Deployment script is empty');
-            result = await _runScript(config, script);
+            result = await _handleDeploy(body);
           default:
             response.statusCode = 404;
             result = {'error': 'Unknown route'};
@@ -257,6 +145,154 @@ class DevelopmentServer {
     } finally {
       await response.close();
     }
+  }
+
+  void _handleHome(HttpResponse response) {
+    response.headers.contentType = ContentType.html;
+    String scriptJson(String value) => jsonEncode(value)
+        .replaceAll('<', r'\u003c')
+        .replaceAll('>', r'\u003e')
+        .replaceAll('&', r'\u0026');
+    response.write(webPage
+        .replaceAll('__CSRF__', _csrf)
+        .replaceAll('__PROJECT_PATH_JSON__', scriptJson(Directory.current.path))
+        .replaceAll('__PROJECT_NAME_JSON__',
+            scriptJson(p.basename(Directory.current.path))));
+  }
+
+  Future<void> _handleAuthCallback(HttpRequest request) async {
+    await auth.complete(request.uri);
+    request.response.redirect(url);
+  }
+
+  Future<void> _handleGetConfigs(HttpResponse response) async {
+    if (_selected != null && auth.configId == _selected!.id) {
+      try {
+        await auth.validAccessToken(_selected!.id);
+      } catch (_) {}
+    }
+    response.write(jsonEncode({
+      'projects': await store.read(),
+      'selected': _selected?.id,
+      'devApiToken': _csrf,
+      'authenticated': _selected != null && auth.authenticated(_selected!.id)
+    }));
+  }
+
+  Future<void> _handleLocalRun(
+      HttpRequest request, Object? payload, String? bearer) async {
+    final config = _requireSelected();
+    final segments = request.uri.pathSegments;
+    final key = segments.skip(3).join('/');
+    if (key.isEmpty ||
+        segments.skip(3).any(
+            (s) => s.isEmpty || s == '.' || s == '..' || s.contains('\\'))) {
+      throw FormatException('Invalid workflow name');
+    }
+    final script = await _rewriteLocal(config, key: key);
+    final expand = request.uri.queryParameters['expandParameters'];
+    if (expand != null && expand != 'true' && expand != 'false') {
+      throw FormatException('expandParameters must be true or false');
+    }
+    await _runScript(config, script,
+        parameters: payload,
+        scriptName: key,
+        bearerToken: bearer,
+        expandParameters: expand == 'true',
+        forwardTo: request.response);
+  }
+
+  Future<void> _handleSaveConfig(Map<String, dynamic> body) async {
+    final config = ProjectConfig(body);
+    await store.save(config);
+    if (_selected?.id == config.id) {
+      _selected = config;
+      auth.clear();
+    }
+  }
+
+  Future<void> _handleDeleteConfig(Map<String, dynamic> body) async {
+    final id = body['id'];
+    if (id is! String || id.isEmpty)
+      throw const FormatException('Configuration ID is required');
+    await store.delete(id);
+    if (_selected?.id == id) {
+      _selected = null;
+      auth.clear();
+    }
+  }
+
+  Future<void> _handleSelectConfig(Map<String, dynamic> body) async {
+    final id = body['id'];
+    final selected =
+        id == '' ? null : (await store.read()).firstWhere((c) => c.id == id);
+    if (_selected?.id != selected?.id) auth.clear();
+    _selected = selected;
+  }
+
+  Future<Object?> _handleLogin() async {
+    final config = _requireSelected();
+    final redirect = url.resolve('/auth/callback').toString();
+    return {'url': (await auth.begin(config, redirect)).toString()};
+  }
+
+  Future<void> _handleLogout() async {
+    auth.clear();
+  }
+
+  Future<Object?> _handleRun(Map<String, dynamic> body) async {
+    final config = _requireSelected();
+    final script = body['script'];
+    if (script is! String || script.trim().isEmpty) {
+      throw const FormatException('Enter a CGScript to run');
+    }
+    return await _runScript(
+        config, await _rewriteLocal(config, source: script));
+  }
+
+  Future<Object?> _handleDeploy(Map<String, dynamic> body) async {
+    final config = _requireSelected();
+    final kind = body['kind'];
+    if (kind != 'scripts' && kind != 'build')
+      throw StateError('Invalid deployment kind');
+    final mode = body['mode'];
+    if (mode != 'test' && mode != 'production') {
+      throw const FormatException('Deployment mode must be test or production');
+    }
+    final builder = deploymentScriptBuilder;
+    if (builder == null) {
+      await auth.validAccessToken(config.id);
+      return await CatglobeDeployment(
+        (script) => _runScript(config, script),
+        assets: deploymentAssets,
+        fileUploader: CgsFileUploader(
+            auth.client, Uri.parse(config.value('issuer')),
+            accessToken: () => auth.validAccessToken(config.id)),
+      ).deploy(config, mode as String, includeBuild: kind == 'build');
+    }
+    final directory = await _localDirectory(config,
+        config.value(kind == 'scripts' ? 'scriptDirectory' : 'buildDirectory'));
+    final files = <Map<String, String>>[];
+    var size = 0;
+    await for (final entity
+        in directory.list(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final bytes = await entity.readAsBytes();
+      size += bytes.length;
+      if (size > 50 * 1024 * 1024)
+        throw StateError('Deployment exceeds 50 MiB');
+      files.add({
+        'path': p
+            .relative(entity.path, from: directory.path)
+            .split(p.separator)
+            .join('/'),
+        'contentBase64': base64Encode(bytes)
+      });
+    }
+    if (files.isEmpty) throw StateError('No deployment files found');
+    final script = builder(config, kind as String, mode as String, files);
+    if (script.trim().isEmpty) throw StateError('Deployment script is empty');
+    return await _runScript(config, script);
   }
 
   ProjectConfig _requireSelected() =>
