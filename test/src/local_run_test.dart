@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:catglobe_dev/catglobe_dev.dart';
+import 'package:catglobe_dev/catglobe_client.dart';
 import 'package:catglobe_dev/src/script_rewriter.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -181,5 +182,40 @@ void main() {
         headers: runHeaders,
         body: '[1,2]');
     expect(expanded.statusCode, 200);
+
+    final browserTransport = MockClient((request) async {
+      final forwarded = http.Request(request.method, request.url)
+        ..headers.addAll(request.headers)
+        ..headers['Origin'] = 'http://localhost:8080'
+        ..bodyBytes = request.bodyBytes;
+      final response = await client.send(forwarded);
+      expect(response.headers['access-control-allow-origin'],
+          'http://localhost:8080');
+      return http.Response.fromStream(response);
+    });
+    addTearDown(browserTransport.close);
+    final workflows = CatglobeWorkflowClient(
+        debug: true, localServer: server.url, client: browserTransport);
+    expect(await workflows.run('A', [1, 2], expandParameters: true),
+        {'value': 42});
+    final sessionPreflight = await client.send(http.Request('OPTIONS', endpoint)
+      ..headers['Origin'] = 'http://localhost:8080'
+      ..headers['Access-Control-Request-Headers'] = 'x-cg-token');
+    expect(sessionPreflight.headers['access-control-allow-headers'],
+        contains('X-Cg-Token'));
+    await sessionPreflight.stream.drain<void>();
+    expect(
+        (await client.get(server.url.resolve('/api/configs'),
+                headers: {'Origin': 'https://evil.test'}))
+            .statusCode,
+        403);
+    expect(
+        (await client.post(endpoint,
+                headers: {'X-Cg-Token': 'wrong'}, body: 'null'))
+            .statusCode,
+        403);
+    server.auth.clear();
+    await expectLater(
+        workflows.run('A', null), throwsA(isA<CgScriptException>()));
   });
 }

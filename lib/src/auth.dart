@@ -82,7 +82,7 @@ class Authentication {
       'client_id': config.value('clientId'),
       'redirect_uri': redirect,
       'response_type': 'code',
-      'scope': 'email profile roles openid offline_access',
+      'scope': 'openid offline_access',
       'state': attempt.state,
       'code_challenge': pkceChallenge(attempt.verifier),
       'code_challenge_method': 'S256',

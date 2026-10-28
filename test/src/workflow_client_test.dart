@@ -5,6 +5,108 @@ import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+      'concurrent first runs share a token lookup and failed lookup can recover',
+      () async {
+    var reads = 0;
+    final transport = MockClient((request) async {
+      if (request.method == 'GET') {
+        reads++;
+        await Future<void>.delayed(Duration(milliseconds: 10));
+        if (reads == 1) return http.Response('unavailable', 503);
+        return http.Response('{"devApiToken":"local"}', 200);
+      }
+      expect(request.headers['X-Cg-Token'], 'local');
+      return http.Response('{"result":42}', 200);
+    });
+    addTearDown(transport.close);
+    final client = CatglobeWorkflowClient(debug: true, client: transport);
+    await expectLater(
+        Future.wait([client.run('A', null), client.run('B', null)]),
+        throwsStateError);
+    expect(reads, 1);
+    expect(await Future.wait([client.run('A', null), client.run('B', null)]),
+        [42, 42]);
+    expect(reads, 2);
+  });
+
+  test(
+      'server restart refreshes cached token once without retrying script errors',
+      () async {
+    var reads = 0;
+    var posts = 0;
+    var restarted = false;
+    var scriptError = false;
+    final transport = MockClient((request) async {
+      if (request.method == 'GET') {
+        reads++;
+        return http.Response(
+            jsonEncode({'devApiToken': restarted ? 'new' : 'old'}), 200);
+      }
+      posts++;
+      if (restarted && request.headers['X-Cg-Token'] == 'old') {
+        return http.Response('{"error":"Request forbidden"}', 403);
+      }
+      expect(jsonDecode(request.body), [1, 2]);
+      expect(request.url.queryParameters['expandParameters'], 'true');
+      if (scriptError) return http.Response('{"error":"script denied"}', 403);
+      return http.Response('{"result":42}', 200);
+    });
+    addTearDown(transport.close);
+    final client = CatglobeWorkflowClient(debug: true, client: transport);
+    expect(await client.run('A', [1, 2], expandParameters: true), 42);
+    restarted = true;
+    expect(await client.run('A', [1, 2], expandParameters: true), 42);
+    expect(reads, 2);
+    expect(posts, 3);
+    scriptError = true;
+    await expectLater(client.run('A', [1, 2], expandParameters: true),
+        throwsA(isA<CgScriptException>()));
+    expect(reads, 2);
+    expect(posts, 4);
+  });
+
+  test(
+      'debug caches the local session token across sequential and concurrent runs',
+      () async {
+    var sessionReads = 0;
+    final transport = MockClient((request) async {
+      expect(request.url.origin, 'http://localhost:5678');
+      expect(request.headers.containsKey('Authorization'), isFalse);
+      if (request.method == 'GET') {
+        expect(request.url.path, '/api/configs');
+        sessionReads++;
+        return http.Response(
+            jsonEncode({'devApiToken': 'local-$sessionReads'}), 200);
+      }
+      expect(request.headers['X-Cg-Token'], 'local-$sessionReads');
+      expect(request.url.path, '/api/cgscript/run/Folder/A');
+      expect(jsonDecode(request.body), {'id': 7});
+      return http.Response('{"result":42}', 200);
+    });
+    addTearDown(transport.close);
+    final client = CatglobeWorkflowClient(
+        debug: true,
+        localServer: Uri.parse('http://localhost:5678'),
+        client: transport);
+    expect(await client.run('Folder/A', {'id': 7}), 42);
+    expect(await client.run('Folder/A', {'id': 7}), 42);
+    expect(
+        await Future.wait(
+            List.generate(3, (_) => client.run('Folder/A', {'id': 7}))),
+        everyElement(42));
+    expect(sessionReads, 1);
+  });
+
+  test('an explicit empty provider does not fall back to server authentication',
+      () async {
+    final transport = MockClient((_) async => fail('No request expected'));
+    addTearDown(transport.close);
+    final client = CatglobeWorkflowClient(
+        debug: true, accessToken: () => null, client: transport);
+    await expectLater(client.run('A', null), throwsStateError);
+  });
+
   test('debug paths and deployed IDs share JSON parameters and decoded results',
       () async {
     final requests = <http.Request>[];

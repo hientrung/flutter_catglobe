@@ -61,7 +61,7 @@ class DevelopmentServer {
       response.headers.contentType = ContentType.json;
       final localRun = request.uri.path.startsWith('/api/cgscript/run/');
       final origin = request.headers.value('origin');
-      if (localRun && origin != null) {
+      if ((localRun || request.uri.path == '/api/configs') && origin != null) {
         final uri = Uri.tryParse(origin);
         if (uri == null ||
             !['http', 'https'].contains(uri.scheme) ||
@@ -74,9 +74,9 @@ class DevelopmentServer {
         response.headers.set('Access-Control-Allow-Origin', origin);
         response.headers.set('Vary', 'Origin');
         if (request.method == 'OPTIONS') {
-          response.headers.set('Access-Control-Allow-Methods', 'POST');
-          response.headers.set(
-              'Access-Control-Allow-Headers', 'Content-Type, Authorization');
+          response.headers.set('Access-Control-Allow-Methods', 'GET, POST');
+          response.headers.set('Access-Control-Allow-Headers',
+              'Content-Type, Authorization, X-Cg-Token');
           response.statusCode = 204;
           return;
         }
@@ -90,7 +90,7 @@ class DevelopmentServer {
           ?.group(1);
       if (request.method != 'POST' ||
           (localRun
-              ? bearer == null
+              ? bearer == null && request.headers.value('x-cg-token') != _csrf
               : request.headers.value('x-cg-token') != _csrf) ||
           (!localRun &&
               request.headers.value('origin') != null &&

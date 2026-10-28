@@ -66,7 +66,7 @@ Register `http://localhost:5000/auth/callback` as its redirect URI, matching you
 For example, `--port 6000` requires registering
 `http://localhost:6000/auth/callback`. Old saved redirect URI values are ignored.
 No client secret is used. Scopes are fixed to
-`email profile roles openid offline_access`; the client must
+`openid offline_access`; the client must
 be granted these permissions. Access tokens remain in memory, expire according to
 the provider response, and are cleared when switching/editing config or logging out.
 Refresh tokens returned with `offline_access` are kept only in memory. Before
@@ -111,10 +111,10 @@ The name is relative to `scriptDirectory`, without `.cgs`, `@userId` or `.public
 URL-encode each name segment when it contains spaces or non-ASCII characters.
 Set `Content-Type: application/json` and `Authorization: Bearer <access_token>`
 using the Flutter app's Catglobe access token. The local API forwards this token
-to Catglobe for authentication and execution; it does not use the console login
-session or require `X-Cg-Token` for this route.
+to Catglobe for authentication and execution. Alternatively, send `X-Cg-Token`
+using `devApiToken` from `GET /api/configs` to run with the console login session.
 The Flutter app owns renewal of its caller-supplied token: the local API does not
-have that caller's refresh token and never substitutes a console session token.
+have that caller's refresh token. Explicit Bearer tokens always take precedence.
 Flutter Web preflights and requests from localhost/loopback origins are supported.
 
 ```dart
@@ -148,7 +148,8 @@ final workflows = CatglobeWorkflowClient(
   debug: kDebugMode,
   // Set this if the production API is on another origin; defaults to Uri.base.
   // issuer: Uri.parse('https://your-site.catglobe.com/'),
-  accessToken: () => authentication.getValidAccessToken(),
+  // Optional: omit in debug to use the local server login session.
+  // accessToken: () => authentication.getValidAccessToken(),
 );
 
 final result = await workflows.run('Folder/Name', {'customerId': 123});
@@ -165,8 +166,12 @@ to a local filename. Both modes send the identical JSON body and decode the same
 Catglobe envelope into the return value or `CgScriptException`.
 
 When the deployed web app uses the issuer's same-origin browser login session,
-the access-token callback may be omitted online. Debug requests require the
-caller's access token because the localhost bridge does not receive issuer cookies.
+the access-token callback may be omitted online. In debug, omitting `accessToken`
+automatically obtains the development API token and uses the selected project's
+current local server login session, including token refresh. Select a project
+and log in through the local management console first. The Catglobe token stays
+on the server. An explicitly configured callback returning an empty token raises
+an error instead of switching accounts.
 
 `ScriptRewriter` is the shared rule pipeline with explicit `local` and `deploy`
 modes. Local mode recursively replaces `new WorkflowScript("Folder/A")` with
@@ -176,7 +181,8 @@ the remote call. Shared dependencies without cycles are allowed. Deployment mode
 uses resource IDs, so deployed workflows can still have cyclic references.
 Comments, literals and constructors already using numeric IDs or inline code are
 preserved. Expansion is limited to 100 nesting levels and 10 MiB of source.
-Local API execution uses the account identified by the caller's access token; filename impersonation/public settings
+Local API execution uses the caller's access token or, when using `X-Cg-Token`,
+the selected project's server login session; filename impersonation/public settings
 apply when creating deployed Workflow resources.
 
 The UI textarea also passes through `ScriptRewriter` in local mode, so test code

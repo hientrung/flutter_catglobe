@@ -70,8 +70,7 @@ void main() {
     addTearDown(auth.client.close);
     final url =
         await auth.begin(config('one'), 'http://localhost:5000/auth/callback');
-    expect(url.queryParameters['scope'],
-        'email profile roles openid offline_access');
+    expect(url.queryParameters['scope'], 'openid offline_access');
     await expectLater(
         auth.complete(Uri.parse('http://localhost/?state=wrong&code=x')),
         throwsStateError);
