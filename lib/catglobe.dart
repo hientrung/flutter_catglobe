@@ -6,5 +6,5 @@ library;
 
 export 'src/config.dart';
 export 'src/file_uploader.dart' show FileUploader;
-export 'src/deployment.dart' show CatglobeDeployment, DeploymentAssets;
+export 'src/deployment.dart' show CatglobeDeployment;
 export 'src/server.dart' show DevelopmentServer, DeploymentScriptBuilder;

@@ -10,16 +10,6 @@ export 'script_rewriter.dart' show rewriteWorkflowReferences;
 
 typedef ScriptRunner = Future<Object?> Function(String script);
 
-/// Optional site-specific deployment overrides.
-abstract class DeploymentAssets {
-  /// Uploads exact bytes under [dashboardId], preserving relative paths.
-  /// Returns the directory URL from which Flutter can load every uploaded file.
-  Future<Uri> upload(int dashboardId, Map<String, List<int>> files);
-
-  /// Returns CGScript setting anonymous execution to the requested value.
-  String anonymousScript(int workflowId, bool enabled);
-}
-
 class LocalWorkflow {
   LocalWorkflow(this.key, this.source, this.runAs, this.isPublic);
   final String key;
@@ -126,39 +116,15 @@ return dashboard.UniqueId;
 String workflowMapScript(Map<String, int> ids) =>
     'globalThis.catglobeWorkflowIds = Object.freeze(${jsonEncode(ids).replaceAll('<', r'\u003c')});';
 
-String prepareDashboardHtml(String html, Map<String, int> ids, Uri assets) {
-  if (!assets.isAbsolute ||
-      assets.scheme != 'https' ||
-      !assets.path.endsWith('/') ||
-      assets.hasQuery ||
-      assets.hasFragment) {
-    throw FormatException('Asset uploader must return an HTTPS directory URL');
-  }
-  final head = RegExp(r'<head\b[^>]*>', caseSensitive: false).firstMatch(html);
-  if (head == null)
-    throw FormatException('Build index.html has no head element');
-  html = html.replaceAll(RegExp(r'<base\b[^>]*>', caseSensitive: false), '');
-  final insert =
-      RegExp(r'<head\b[^>]*>', caseSensitive: false).firstMatch(html)!.end;
-  final url =
-      assets.toString().replaceAll('&', '&amp;').replaceAll('"', '&quot;');
-  return html.substring(0, insert) +
-      '<base href="$url"><script>${workflowMapScript(ids)}</script>' +
-      html.substring(insert);
-}
-
 /// Deploys local workflows and an optional Flutter build to Catglobe.
 class CatglobeDeployment {
   /// Creates a deployment service using [run] and optional asset upload support.
-  CatglobeDeployment(this.run, {this.assets, this.fileUploader});
+  CatglobeDeployment(this.run, {this.fileUploader});
 
   /// The authenticated CGScript executor used to create and update resources.
   final ScriptRunner run;
 
-  /// The optional site-specific asset uploader and permission script builder.
-  final DeploymentAssets? assets;
-
-  /// The standard Files API uploader used when [assets] is absent.
+  /// The Files API uploader required for build deployment.
   final FileUploader? fileUploader;
 
   /// Deploys [config] to the `test` or `production` environment specified by [mode].
@@ -213,7 +179,8 @@ class CatglobeDeployment {
       if (!build.containsKey('index.html'))
         throw FormatException('Build requires index.html');
       html = utf8.decode(build['index.html']!);
-      prepareDashboardHtml(html, {}, Uri.parse('https://preflight.invalid/'));
+      prepareFlatDashboardHtml(
+          html, {}, {}, Uri.parse('https://preflight.invalid/'));
       final manifestBytes = build['manifest.json'];
       if (manifestBytes != null) {
         final decoded = jsonDecode(utf8.decode(manifestBytes));
@@ -223,11 +190,11 @@ class CatglobeDeployment {
         manifest = decoded;
       }
     }
-    if (includeBuild && assets == null && fileUploader == null) {
+    if (includeBuild && fileUploader == null) {
       throw StateError(
           'A FileUploader is required. No resources were changed.');
     }
-    if (includeBuild && assets == null) {
+    if (includeBuild) {
       for (final entry in build.entries) {
         FileUploader.storageName(1, entry.key);
       }
@@ -248,8 +215,7 @@ class CatglobeDeployment {
           workflow,
           '// Automatically deployed on $deployedAt (UTC). Manual edits will be overwritten on the next deployment.\n'
           '${workflow.compile(ids, isTest: mode == 'test')}',
-          assets?.anonymousScript(id, workflow.isPublic) ??
-              anonymousWorkflowScript(id, workflow.isPublic)));
+          anonymousWorkflowScript(id, workflow.isPublic)));
     }
     int? dashboardId;
     String? buildHash;
@@ -257,8 +223,7 @@ class CatglobeDeployment {
       final name = mode == 'test' ? 'Test portal' : 'Live portal';
       dashboardId = await _id(dashboardScript(name, rootId, null));
       if (manifest != null) {
-        final issuer =
-            fileUploader?.issuer ?? Uri.parse(config.value('issuer'));
+        final issuer = fileUploader!.issuer;
         manifest['start_url'] = issuer
             .resolve('/ol/ReportModule/DashboardModule/DashboardViewer5.aspx')
             .replace(queryParameters: {'rid': '$dashboardId'}).toString();
@@ -273,35 +238,29 @@ class CatglobeDeployment {
           ])))
           .toString();
       build.remove('index.html');
-      if (assets != null) {
-        final base = await assets!.upload(dashboardId, build);
-        await run(dashboardScript(
-            name, rootId, prepareDashboardHtml(html!, ids, base)));
-      } else {
-        final uploader = fileUploader!;
-        final urls = {
-          for (final path in build.keys)
-            path: uploader
-                .downloadUrl(FileUploader.storageName(dashboardId, path))
-                .replace(queryParameters: {
-              'file': FileUploader.storageName(dashboardId, path),
-              'v': buildHash,
-            })
-        };
-        final transformed = <String, List<int>>{};
-        for (final entry in build.entries) {
-          transformed[entry.key] = ['.js', '.mjs', '.css']
-                  .contains(p.posix.extension(entry.key))
-              ? utf8.encode(
-                  rewriteAssetText(utf8.decode(entry.value), entry.key, urls))
-              : entry.value;
-        }
-        await uploader.upload(dashboardId, transformed);
-        final base =
-            uploader.issuer.resolve('/__catglobe_flutter__/$dashboardId/');
-        await run(dashboardScript(
-            name, rootId, prepareFlatDashboardHtml(html!, ids, urls, base)));
+      final uploader = fileUploader!;
+      final urls = {
+        for (final path in build.keys)
+          path: uploader
+              .downloadUrl(FileUploader.storageName(dashboardId, path))
+              .replace(queryParameters: {
+            'file': FileUploader.storageName(dashboardId, path),
+            'v': buildHash,
+          })
+      };
+      final transformed = <String, List<int>>{};
+      for (final entry in build.entries) {
+        transformed[entry.key] =
+            ['.js', '.mjs', '.css'].contains(p.posix.extension(entry.key))
+                ? utf8.encode(
+                    rewriteAssetText(utf8.decode(entry.value), entry.key, urls))
+                : entry.value;
       }
+      await uploader.upload(dashboardId, transformed);
+      final base =
+          uploader.issuer.resolve('/__catglobe_flutter__/$dashboardId/');
+      await run(dashboardScript(
+          name, rootId, prepareFlatDashboardHtml(html!, ids, urls, base)));
     }
     return {
       'mode': mode,

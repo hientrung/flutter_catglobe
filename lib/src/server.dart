@@ -24,9 +24,7 @@ class DevelopmentServer {
   ///
   /// The server closes the supplied HTTP `client` when [close] is called.
   DevelopmentServer(this.store,
-      {this.deploymentScriptBuilder,
-      this.deploymentAssets,
-      http.Client? client})
+      {this.deploymentScriptBuilder, http.Client? client})
       : auth = Authentication(client ?? http.Client());
 
   /// The persistent store for project settings.
@@ -34,9 +32,6 @@ class DevelopmentServer {
 
   /// The optional replacement for standard deployment script generation.
   final DeploymentScriptBuilder? deploymentScriptBuilder;
-
-  /// The optional site-specific asset and anonymous-access implementation.
-  final DeploymentAssets? deploymentAssets;
 
   /// The in-memory authentication session used for the selected project.
   final Authentication auth;
@@ -287,7 +282,6 @@ class DevelopmentServer {
       await auth.validAccessToken(config.id);
       return await CatglobeDeployment(
         (script) => _runScript(config, script),
-        assets: deploymentAssets,
         fileUploader: FileUploader(
             auth.client, Uri.parse(config.value('issuer')),
             accessToken: () => auth.validAccessToken(config.id)),

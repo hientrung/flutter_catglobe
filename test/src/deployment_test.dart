@@ -7,20 +7,6 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-class FakeAssets implements DeploymentAssets {
-  int? dashboard;
-  Map<String, List<int>>? uploaded;
-  @override
-  String anonymousScript(int workflowId, bool enabled) =>
-      '// anonymous=$enabled';
-  @override
-  Future<Uri> upload(int dashboardId, Map<String, List<int>> files) async {
-    dashboard = dashboardId;
-    uploaded = files;
-    return Uri.parse('https://example.com/files/$dashboardId/');
-  }
-}
-
 class FlatUploadClient extends http.BaseClient {
   final uploaded = <String, List<int>>{};
   @override
@@ -71,18 +57,6 @@ new WorkflowScript(123).Call();
         () => LocalWorkflow.parse('A.cgs', 'new WorkflowScript("B");')
             .compile({}),
         throwsFormatException);
-  });
-
-  test('HTML map precedes bootstrap and replaces existing base', () {
-    final html = prepareDashboardHtml(
-        '<html><head><base href="/"><script src="flutter_bootstrap.js"></script></head></html>',
-        {'A</script>': 42},
-        Uri.parse('https://example.com/files/7/'));
-    expect('<base'.allMatches(html).length, 1);
-    expect(html, contains('href="https://example.com/files/7/"'));
-    expect(html, contains(r'A\u003c/script>'));
-    expect(html.indexOf('catglobeWorkflowIds'),
-        lessThan(html.indexOf('flutter_bootstrap.js')));
   });
 
   late Directory temp;
@@ -228,13 +202,15 @@ new WorkflowScript(123).Call();
       'two passes support cycles and upload preserves bytes under dashboard ID',
       () async {
     final scripts = <String>[];
-    final assets = FakeAssets();
+    final client = FlatUploadClient();
+    addTearDown(client.close);
     var id = 100;
     final result = await CatglobeDeployment((script) async {
       scripts.add(script);
       return ++id;
-    }, assets: assets)
-        .deploy(config, 'test');
+    },
+        fileUploader: FileUploader(client, Uri.parse('https://example.com/'),
+            accessToken: () => 'token')).deploy(config, 'test');
     final ids = result['workflowIds'] as Map<String, int>;
     final updates =
         scripts.where((s) => s.contains('workflow.CgScript')).toList();
@@ -247,11 +223,17 @@ new WorkflowScript(123).Call();
             scripts.lastIndexWhere((s) => s.contains('return empty;'))));
     expect(scripts.first, contains('Test Script'));
     expect(scripts.last, contains('Test portal'));
-    expect(assets.dashboard, result['dashboardId']);
+    final dashboardId = result['dashboardId'] as int;
     expect(result['uploadedFiles'], ['catglobe-workflows.js', 'main.wasm']);
-    expect(assets.uploaded!['main.wasm'], [0, 255, 128, 1]);
-    expect(assets.uploaded!.containsKey('index.html'), isFalse);
-    expect(utf8.decode(assets.uploaded!['catglobe-workflows.js']!),
+    expect(client.uploaded[FileUploader.storageName(dashboardId, 'main.wasm')],
+        [0, 255, 128, 1]);
+    expect(
+        client.uploaded
+            .containsKey(FileUploader.storageName(dashboardId, 'index.html')),
+        isFalse);
+    expect(
+        utf8.decode(client.uploaded[
+            FileUploader.storageName(dashboardId, 'catglobe-workflows.js')]!),
         contains('Folder/B'));
     expect(scripts.last, contains('catglobeWorkflowIds'));
   });
@@ -273,41 +255,28 @@ new WorkflowScript(123).Call();
   });
 
   for (final mode in ['test', 'production']) {
-    for (final customAssets in [false, true]) {
-      test(
-          '$mode manifest start_url points to Dashboard (custom: $customAssets)',
-          () async {
-        final file = File(p.join(temp.path, 'build', 'web', 'manifest.json'));
-        const original =
-            '{"name":"App","start_url":".","display":"standalone"}';
-        await file.writeAsString(original);
-        final assets = FakeAssets();
-        final client = FlatUploadClient();
-        addTearDown(client.close);
-        var id = 100;
-        final result = await CatglobeDeployment((_) async => ++id,
-                assets: customAssets ? assets : null,
-                fileUploader: customAssets
-                    ? null
-                    : FileUploader(client, Uri.parse('https://example.com/'),
-                        accessToken: () => 'token'))
-            .deploy(config, mode);
-        final dashboard = result['dashboardId'] as int;
-        final bytes = customAssets
-            ? assets.uploaded!['manifest.json']!
-            : client.uploaded[
-                FileUploader.storageName(dashboard, 'manifest.json')]!;
-        expect(jsonDecode(utf8.decode(bytes)), {
-          'name': 'App',
-          'start_url':
-              'https://example.com/ol/ReportModule/DashboardModule/DashboardViewer5.aspx?rid=$dashboard',
-          'display': 'standalone',
-        });
-        expect(await file.readAsString(), original);
+    test('$mode manifest start_url points to Dashboard', () async {
+      final file = File(p.join(temp.path, 'build', 'web', 'manifest.json'));
+      const original = '{"name":"App","start_url":".","display":"standalone"}';
+      await file.writeAsString(original);
+      final client = FlatUploadClient();
+      addTearDown(client.close);
+      var id = 100;
+      final result = await CatglobeDeployment((_) async => ++id,
+          fileUploader: FileUploader(client, Uri.parse('https://example.com/'),
+              accessToken: () => 'token')).deploy(config, mode);
+      final dashboard = result['dashboardId'] as int;
+      final bytes = client
+          .uploaded[FileUploader.storageName(dashboard, 'manifest.json')]!;
+      expect(jsonDecode(utf8.decode(bytes)), {
+        'name': 'App',
+        'start_url':
+            'https://example.com/ol/ReportModule/DashboardModule/DashboardViewer5.aspx?rid=$dashboard',
+        'display': 'standalone',
       });
-    }
+      expect(await file.readAsString(), original);
+    });
   }
-
   test('flat CgsFile build deploy uploads files and publishes mapped Dashboard',
       () async {
     final client = FlatUploadClient();

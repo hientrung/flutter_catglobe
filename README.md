@@ -248,10 +248,7 @@ direct permission to `None` when that account exists; inherited/group permission
 are not changed. The deploying account needs FullControl on the Workflow to
 update its permissions.
 
-The stock CLI uses `FileUploader` and flat asset mapping. Optional custom
-`DeploymentAssets` implementations can override anonymous permission scripts
-and upload using a directory URL via `DevelopmentServer(deploymentAssets: ...)`.
-Script-only deployment is available through `CatglobeDeployment.deploy` with
+The CLI uses `FileUploader` and flat asset mapping. Script-only deployment is available through `CatglobeDeployment.deploy` with
 `includeBuild: false`.
 
 A custom `DeploymentScriptBuilder` can be supplied for custom sites;
