@@ -111,6 +111,40 @@ new WorkflowScript(123).Call();
   tearDown(() => temp.delete(recursive: true));
 
   for (final mode in ['test', 'production']) {
+    test('$mode filters blocks and adds a UTC deployment notice', () async {
+      await File(p.join(temp.path, 'cgscript', 'A.cgs'))
+          .writeAsString('#IF dev\nreturn "testing";\n#ENDIF\n'
+              '#IF RELEASE\nreturn "production";\n#ENDIF\n');
+      final scripts = <String>[];
+      final before = DateTime.now().toUtc();
+      await CatglobeDeployment((s) async {
+        scripts.add(s);
+        return 123;
+      }).deploy(config, mode, includeBuild: false);
+      final update = scripts.firstWhere((s) => s.contains('workflow.CgScript'));
+      final match = RegExp(r'workflow.CgScript = (".*");').firstMatch(update)!;
+      final source = jsonDecode(match[1]!) as String;
+      expect(source, startsWith('// Automatically deployed on '));
+      expect(source,
+          contains('Manual edits will be overwritten on the next deployment.'));
+      final timestamp = source.split(' on ')[1].split(' (UTC)')[0];
+      final deployed = DateTime.parse(timestamp);
+      expect(deployed.isUtc, isTrue);
+      expect(deployed.isBefore(before), isFalse);
+      expect(deployed.isAfter(DateTime.now().toUtc()), isFalse);
+      expect(
+          source,
+          contains(
+              mode == 'test' ? 'return "testing";' : 'return "production";'));
+      expect(
+          source,
+          isNot(contains(
+              mode == 'test' ? 'return "production";' : 'return "testing";')));
+      expect(source, isNot(contains('#IF')));
+    });
+  }
+
+  for (final mode in ['test', 'production']) {
     test('$mode deploy flattens nested names into the mode folder', () async {
       final nested =
           Directory(p.join(temp.path, 'cgscript', 'FolderA', 'SubA'));

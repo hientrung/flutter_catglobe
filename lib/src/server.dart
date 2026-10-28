@@ -323,6 +323,7 @@ class DevelopmentServer {
 
   Future<String> _rewriteLocal(ProjectConfig config,
       {String? key, String? source}) async {
+    if (source != null) source = filterScriptMode(source, isTest: true);
     final sources = <String, String>{};
     var needsFiles = source == null;
     if (source != null) {

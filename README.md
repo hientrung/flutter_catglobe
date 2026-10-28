@@ -193,6 +193,30 @@ Build deployment has explicit `test` (review) and `production` (customer release
 modes. The local deploy request includes `kind: "build"` and the selected `mode`;
 the server rejects missing or unknown modes.
 
+Before local execution or deployment, standalone conditional directives select
+environment-specific CGScript:
+
+```text
+#IF dev
+DebugLog("Local or test deployment");
+#ENDIF
+#IF production
+DebugLog("Production deployment");
+#ENDIF
+```
+
+Local execution and test deployment accept `test`, `dev`, and `development`.
+Production deployment accepts `prod`, `production`, `live`, and `release`.
+Directive keywords and mode values are case-insensitive. Matching blocks keep
+their code and remove the directive lines; nonmatching blocks are removed while
+code outside them remains. Nested blocks are supported. Directives inside
+comments or string literals are preserved. Unknown modes or unbalanced blocks
+raise an error. Filtering happens before workflow reference resolution.
+
+Deployed workflow source starts with an English `//` notice containing the UTC
+deployment timestamp and warning that manual edits will be overwritten on the
+next deployment. Local execution does not add this notice.
+
 The built-in `CatglobeDeployment` orchestrator requires a positive `rootFolderId`.
 It scans `.cgs` files recursively from `scriptDirectory` (default `cgscript`).
 `Folder/Name@123.public.cgs` becomes workflow `Folder_Name` directly in the mode folder,

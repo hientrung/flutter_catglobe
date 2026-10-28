@@ -49,8 +49,11 @@ class LocalWorkflow {
         public);
   }
 
-  String compile(Map<String, int> ids) => ScriptRewriter(
-          mode: ScriptRewriteMode.deploy, sources: {key: source}, ids: ids)
+  String compile(Map<String, int> ids, {bool isTest = true}) => ScriptRewriter(
+          mode: ScriptRewriteMode.deploy,
+          sources: {key: source},
+          ids: ids,
+          isTest: isTest)
       .rewrite(key);
   @override
   String toString() => key;
@@ -198,7 +201,7 @@ class CatglobeDeployment {
     // All local validation precedes remote writes.
     final dummyIds = {for (final key in workflows.keys) key: 1};
     for (final workflow in workflows.values) {
-      workflow.compile(dummyIds);
+      workflow.compile(dummyIds, isTest: mode == 'test');
     }
     final build = includeBuild
         ? await readDeploymentFiles(config, 'buildDirectory', 'build/web')
@@ -227,12 +230,14 @@ class CatglobeDeployment {
       ids[entry.value] =
           await _id(reserveWorkflowScript(entry.key, modeFolder));
     }
+    final deployedAt = DateTime.now().toUtc().toIso8601String();
     for (final workflow in workflows.values) {
       final id = ids[workflow.key]!;
       await run(updateWorkflowScript(
           id,
           workflow,
-          workflow.compile(ids),
+          '// Automatically deployed on $deployedAt (UTC). Manual edits will be overwritten on the next deployment.\n'
+          '${workflow.compile(ids, isTest: mode == 'test')}',
           assets?.anonymousScript(id, workflow.isPublic) ??
               anonymousWorkflowScript(id, workflow.isPublic)));
     }

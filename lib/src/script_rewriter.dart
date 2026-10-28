@@ -2,6 +2,62 @@ import 'dart:convert';
 
 enum ScriptRewriteMode { local, deploy }
 
+/// Filters standalone `#IF mode` blocks for test/local or production execution.
+///
+/// Recognizes `test`, `dev`, and `development` when [isTest] is true, and
+/// `prod`, `production`, `live`, and `release` otherwise, ignoring case.
+/// Removes directive lines and excluded blocks while preserving other code.
+/// Supports nested blocks and ignores directives inside comments and literals.
+/// Throws [FormatException] for unknown modes or unbalanced directives.
+String filterScriptMode(String source, {required bool isTest}) {
+  final protected = _tokens
+      .allMatches(source)
+      .where((m) =>
+          m[0]!.startsWith('//') ||
+          m[0]!.startsWith('/*') ||
+          m[0]!.startsWith('"') ||
+          m[0]!.startsWith("'"))
+      .toList();
+  final directives = RegExp(r'^[ \t]*#(IF\b[^\r\n]*|ENDIF\b[^\r\n]*)\r?$',
+      multiLine: true, caseSensitive: false);
+  final stack = <bool>[];
+  final out = StringBuffer();
+  var offset = 0;
+  var protectedIndex = 0;
+  for (final match in directives.allMatches(source)) {
+    final hash = source.indexOf('#', match.start);
+    while (protectedIndex < protected.length &&
+        protected[protectedIndex].end <= hash) {
+      protectedIndex++;
+    }
+    if (protectedIndex < protected.length &&
+        protected[protectedIndex].start <= hash) continue;
+    if (stack.every((enabled) => enabled))
+      out.write(source.substring(offset, match.start));
+    final directive = match[1]!.trim().toLowerCase();
+    if (directive == 'endif') {
+      if (stack.isEmpty) throw const FormatException('Unexpected #ENDIF');
+      stack.removeLast();
+    } else if (directive.startsWith('if ') || directive.startsWith('if\t')) {
+      final mode = directive.substring(2).trim();
+      const testModes = ['test', 'dev', 'development'];
+      const productionModes = ['prod', 'production', 'live', 'release'];
+      if (!testModes.contains(mode) && !productionModes.contains(mode)) {
+        throw FormatException('Unknown #IF mode: $mode');
+      }
+      stack.add(
+          isTest ? testModes.contains(mode) : productionModes.contains(mode));
+    } else {
+      throw FormatException('Invalid directive: ${match[0]}');
+    }
+    offset = match.end;
+    if (offset < source.length && source[offset] == '\n') offset++;
+  }
+  if (stack.isNotEmpty) throw const FormatException('Missing #ENDIF');
+  out.write(source.substring(offset));
+  return out.toString();
+}
+
 // Consume comments and literals as tokens so their contents cannot be rewritten.
 final _tokens = RegExp(
     r'''//[^\r\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_][A-Za-z_0-9]*|[^\s]''');
@@ -34,10 +90,16 @@ String rewriteWorkflowReferences(
 /// Shared rule pipeline. Local mode expands dependencies; deploy mode uses IDs.
 class ScriptRewriter {
   ScriptRewriter(
-      {required this.mode, required this.sources, this.ids = const {}});
+      {required this.mode,
+      required this.sources,
+      this.ids = const {},
+      this.isTest = true});
   final ScriptRewriteMode mode;
   final Map<String, String> sources;
   final Map<String, int> ids;
+
+  /// Whether conditional blocks use the test/local environment.
+  final bool isTest;
   final _compiled = <String, String>{};
   final _active = <String>[];
   static const maxExpandedLength = 10 * 1024 * 1024;
@@ -45,8 +107,9 @@ class ScriptRewriter {
   String rewrite(String key) {
     final cached = _compiled[key];
     if (cached != null) return cached;
-    final source = sources[key];
-    if (source == null) throw FormatException('Workflow not found: $key');
+    final original = sources[key];
+    if (original == null) throw FormatException('Workflow not found: $key');
+    final source = filterScriptMode(original, isTest: isTest);
     if (_active.contains(key)) {
       throw FormatException(
           'Circular workflow reference: ${[..._active, key].join(' -> ')}');
