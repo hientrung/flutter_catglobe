@@ -133,7 +133,7 @@ client library (the management/CLI library imports `dart:io`):
 
 ```dart
 import 'package:flutter/foundation.dart';
-import 'package:catglobe/catglobe_client.dart';
+import 'package:catglobe/client.dart';
 
 final workflows = CgScriptClient(
   debug: kDebugMode,

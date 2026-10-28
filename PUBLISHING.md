@@ -56,7 +56,7 @@ Verify web config editing/selection, a registered
 `http://localhost:5000/auth/callback` redirect URI and PKCE login.
 For remote operations, use the confirmed API and a test server/project.
 Use `dev_dependencies` for CLI-only tooling. When the Flutter app imports
-`package:catglobe/catglobe_client.dart`, add `catglobe` to `dependencies`.
+`package:catglobe/client.dart`, add `catglobe` to `dependencies`.
 
 ## 3. Publish manually
 

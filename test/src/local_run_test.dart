@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:catglobe/catglobe.dart';
-import 'package:catglobe/catglobe_client.dart';
+import 'package:catglobe/client.dart';
 import 'package:catglobe/src/script_rewriter.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
