@@ -4,29 +4,62 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'config.dart';
 
+/// Generates a cryptographically random, unpadded Base64URL secret.
 String randomSecret() =>
     base64UrlEncode(List<int>.generate(32, (_) => Random.secure().nextInt(256)))
         .replaceAll('=', '');
+
+/// Returns the S256 PKCE challenge for the ASCII [verifier].
 String pkceChallenge(String verifier) =>
     base64UrlEncode(sha256.convert(ascii.encode(verifier)).bytes)
         .replaceAll('=', '');
 
+/// The state and PKCE verifier for a pending authorization-code exchange.
 class LoginAttempt {
+  /// Creates a login attempt for [config] using discovered [metadata].
   LoginAttempt(this.config, this.metadata, this.redirect);
+
+  /// The project for which authorization is requested.
   final ProjectConfig config;
+
+  /// The discovery metadata used for this authorization attempt.
   final Map<String, dynamic> metadata;
+
+  /// The callback URL sent in authorization and token requests.
   final String redirect;
+
+  /// The random value used to bind the callback to this attempt.
   final String state = randomSecret();
+
+  /// The random PKCE verifier used during code exchange.
   final String verifier = randomSecret();
+
+  /// The creation time used to enforce the five-minute callback lifetime.
   final DateTime created = DateTime.now();
 }
 
+/// Manages an in-memory authorization-code session with S256 PKCE.
+///
+/// Requests `openid offline_access` and keeps access and refresh tokens only
+/// in memory. ID tokens are not validated or used as identity assertions.
+/// Call [validAccessToken] before authenticated API operations.
 class Authentication {
+  /// Creates a session using the caller-owned HTTP [client].
   Authentication(this.client);
+
+  /// The HTTP transport used for discovery, code exchange, and token refresh.
   final http.Client client;
+
+  /// The authorization attempt awaiting a callback, or `null`.
   LoginAttempt? pending;
+
+  /// The current Bearer token, which may require renewal before use.
   String? accessToken;
+
+  /// The project identifier associated with the current session.
   String? configId;
+
+  /// The expiry time reported for the current access token.
   DateTime? expiresAt;
   String? _refreshToken;
   String? _clientId;
@@ -34,12 +67,16 @@ class Authentication {
   Future<String>? _refreshing;
   int _generation = 0;
 
+  /// Reports whether [id] has a currently unexpired access token.
+  ///
+  /// Does not attempt refresh; use [validAccessToken] before API requests.
   bool authenticated(String id) =>
       configId == id &&
       accessToken != null &&
       expiresAt != null &&
       DateTime.now().isBefore(expiresAt!);
 
+  /// Clears pending login and token state, invalidating ongoing refresh results.
   void clear() {
     _generation++;
     _refreshing = null;
@@ -52,6 +89,12 @@ class Authentication {
     expiresAt = null;
   }
 
+  /// Starts login for [config] and returns the browser authorization URL.
+  ///
+  /// Clears the existing session, discovers issuer endpoints, and requests
+  /// `openid offline_access` with [redirect] as the callback URL.
+  /// Throws [StateError] for missing client settings or incompatible discovery
+  /// metadata. Network and JSON decoding errors propagate.
   Future<Uri> begin(ProjectConfig config, String redirect) async {
     clear();
     if (config.value('clientId').isEmpty)
@@ -89,6 +132,11 @@ class Authentication {
     });
   }
 
+  /// Validates [callback] and exchanges its code for in-memory tokens.
+  ///
+  /// Consumes the pending attempt and checks state, lifetime, and any returned
+  /// issuer. Throws [StateError] for rejected or invalid callbacks and token
+  /// responses. Does not validate ID tokens or establish an asserted user identity.
   Future<void> complete(Uri callback) async {
     final attempt = pending;
     if (attempt == null ||
@@ -145,6 +193,11 @@ class Authentication {
       _refreshToken = token['refresh_token'] as String;
   }
 
+  /// Returns a current access token for project [id], refreshing if necessary.
+  ///
+  /// When refresh is available, renews tokens expiring within 30 seconds.
+  /// Concurrent callers share the pending refresh. Throws [StateError] if
+  /// login is required, refresh fails, or the session changes during refresh.
   Future<String> validAccessToken(String id) async {
     if (configId != id) throw StateError('Login required');
     final canRefresh =

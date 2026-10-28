@@ -10,30 +10,53 @@ import 'cgs_file.dart';
 import 'web.dart';
 import 'script_rewriter.dart';
 
+/// Builds deployment CGScript from a project, deployment kind, mode, and files.
 typedef DeploymentScriptBuilder = String Function(ProjectConfig config,
     String kind, String mode, List<Map<String, String>> files);
 
+/// Serves a loopback management console and local workflow execution API.
+///
+/// Uses in-memory login sessions for the selected project. Local workflow
+/// requests may supply a Bearer token or a development API token to use the
+/// server session. Call [close] when the server is no longer needed.
 class DevelopmentServer {
+  /// Creates a server using [store] and optional deployment overrides.
+  ///
+  /// The server closes the supplied HTTP `client` when [close] is called.
   DevelopmentServer(this.store,
       {this.deploymentScriptBuilder,
       this.deploymentAssets,
       http.Client? client})
       : auth = Authentication(client ?? http.Client());
+
+  /// The persistent store for project settings.
   final ConfigStore store;
+
+  /// The optional replacement for standard deployment script generation.
   final DeploymentScriptBuilder? deploymentScriptBuilder;
+
+  /// The optional site-specific asset and anonymous-access implementation.
   final DeploymentAssets? deploymentAssets;
+
+  /// The in-memory authentication session used for the selected project.
   final Authentication auth;
   HttpServer? _server;
   ProjectConfig? _selected;
   final String _csrf = randomSecret();
   bool _busy = false;
+
+  /// The localhost URL of the bound server, available after [start] completes.
   Uri get url => Uri.parse('http://localhost:${_server!.port}');
 
+  /// Binds the IPv4 loopback interface and starts accepting requests.
+  ///
+  /// Use a [port] of zero to let the operating system select an available port.
   Future<void> start({int port = 5000}) async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     _server!.listen(_handle);
   }
 
+  /// Closes the server and its HTTP client, and clears authentication state.
   Future<void> close() async {
     await _server?.close(force: true);
     auth.client.close();

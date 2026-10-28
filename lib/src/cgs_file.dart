@@ -6,21 +6,37 @@ import 'package:path/path.dart' as p;
 
 /// Uploads permanent files using Catglobe's raw-stream Files API.
 class CgsFileUploader {
+  /// Creates an uploader using [client], [issuer], and a current-token provider.
+  ///
+  /// Throws [ArgumentError] unless [issuer] is an HTTPS URL. The caller owns
+  /// [client] and must close it when no longer needed.
   CgsFileUploader(this.client, this.issuer, {required this.accessToken}) {
     if (issuer.scheme != 'https' || issuer.host.isEmpty) {
       throw ArgumentError.value(issuer, 'issuer', 'HTTPS origin required');
     }
   }
 
+  /// The HTTP transport used for uploads.
   final http.Client client;
+
+  /// The Catglobe HTTPS site receiving uploaded files.
   final Uri issuer;
+
+  /// The provider called before each upload to obtain a current Bearer token.
   final FutureOr<String> Function() accessToken;
 
+  /// The raw-stream Files API upload endpoint.
   Uri get endpoint => issuer.resolve('/api/files/upload/');
 
+  /// Returns the Catglobe download URL for a stored file [name].
   Uri downloadUrl(String name) =>
       issuer.resolve('/CgScript/File').replace(queryParameters: {'file': name});
 
+  /// Creates a deterministic Dashboard-specific filename for [relativePath].
+  ///
+  /// Hashes the normalized POSIX path and preserves its extension. Throws
+  /// [ArgumentError] for invalid [dashboardId] and [FormatException] for unsafe
+  /// paths or unsupported extensions.
   static String storageName(int dashboardId, String relativePath) {
     if (dashboardId <= 0) throw ArgumentError('Invalid Dashboard ID');
     if (relativePath.isEmpty ||

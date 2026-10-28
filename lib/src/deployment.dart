@@ -143,12 +143,30 @@ String prepareDashboardHtml(String html, Map<String, int> ids, Uri assets) {
       html.substring(insert);
 }
 
+/// Deploys local workflows and an optional Flutter build to Catglobe.
 class CatglobeDeployment {
+  /// Creates a deployment service using [run] and optional asset upload support.
   CatglobeDeployment(this.run, {this.assets, this.fileUploader});
+
+  /// The authenticated CGScript executor used to create and update resources.
   final ScriptRunner run;
+
+  /// The optional site-specific asset uploader and permission script builder.
   final DeploymentAssets? assets;
+
+  /// The standard Files API uploader used when [assets] is absent.
   final CgsFileUploader? fileUploader;
 
+  /// Deploys [config] to the `test` or `production` environment specified by [mode].
+  ///
+  /// Set [includeBuild] to `false` to deploy workflows only. Reserves workflow
+  /// IDs before rewriting references, allowing cyclic deployed dependencies.
+  /// Returns `mode`, `workflowIds`, and a nullable `dashboardId`.
+  ///
+  /// Validates local inputs before writing remote resources. Throws
+  /// [FormatException] for invalid settings or sources and [StateError] when
+  /// a build requires an uploader but none is configured. Remote errors
+  /// propagate; resources already written are not rolled back.
   Future<Map<String, Object?>> deploy(ProjectConfig config, String mode,
       {bool includeBuild = true}) async {
     if (mode != 'test' && mode != 'production')
