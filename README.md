@@ -135,7 +135,7 @@ client library (the management/CLI library imports `dart:io`):
 import 'package:flutter/foundation.dart';
 import 'package:catglobe/catglobe_client.dart';
 
-final workflows = CatglobeWorkflowClient(
+final workflows = CgScriptClient(
   debug: kDebugMode,
   // Set this if the production API is on another origin; defaults to Uri.base.
   // issuer: Uri.parse('https://your-site.catglobe.com/'),
@@ -248,7 +248,7 @@ direct permission to `None` when that account exists; inherited/group permission
 are not changed. The deploying account needs FullControl on the Workflow to
 update its permissions.
 
-The stock CLI uses `CgsFileUploader` and flat asset mapping. Optional custom
+The stock CLI uses `FileUploader` and flat asset mapping. Optional custom
 `DeploymentAssets` implementations can override anonymous permission scripts
 and upload using a directory URL via `DevelopmentServer(deploymentAssets: ...)`.
 Script-only deployment is available through `CatglobeDeployment.deploy` with
@@ -257,7 +257,7 @@ Script-only deployment is available through `CatglobeDeployment.deploy` with
 A custom `DeploymentScriptBuilder` can be supplied for custom sites;
 when supplied it bypasses the built-in orchestrator.
 
-`CgsFileUploader` implements the site's `POST /api/files/upload/{saveAs}` contract:
+`FileUploader` implements the site's `POST /api/files/upload/{saveAs}` contract:
 the body contains raw file bytes with `Content-Type: application/octet-stream`,
 and query parameters `overWrite=true` and `isTemp=false` select permanent storage.
 It sends the access token as a Bearer header, disables redirects and checks both
@@ -267,7 +267,7 @@ collisions when the server sanitizes directory separators. Bytes are unchanged.
 Its `upload` returns a map of local paths to `/CgScript/File?file=...` download URLs.
 Empty files are supported by the raw-stream API.
 
-The default build deployment uploads through `CgsFileUploader`. It rewrites HTML
+The default build deployment uploads through `FileUploader`. It rewrites HTML
 asset attributes, CSS `url(...)` references and static/dynamic literal module
 imports in JavaScript. Before bootstrap, the Dashboard installs a map from a
 virtual build directory to actual query URLs. The bridge translates Flutter URL

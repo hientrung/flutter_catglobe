@@ -194,7 +194,7 @@ void main() {
       return http.Response.fromStream(response);
     });
     addTearDown(browserTransport.close);
-    final workflows = CatglobeWorkflowClient(
+    final workflows = CgScriptClient(
         debug: true, localServer: server.url, client: browserTransport);
     expect(await workflows.run('A', parameter: [1, 2], expandParameters: true),
         {'value': 42});

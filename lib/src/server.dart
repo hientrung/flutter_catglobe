@@ -6,7 +6,7 @@ import 'auth.dart';
 import 'config.dart';
 import 'cgscript.dart';
 import 'deployment.dart';
-import 'cgs_file.dart';
+import 'file_uploader.dart';
 import 'web.dart';
 import 'script_rewriter.dart';
 
@@ -288,7 +288,7 @@ class DevelopmentServer {
       return await CatglobeDeployment(
         (script) => _runScript(config, script),
         assets: deploymentAssets,
-        fileUploader: CgsFileUploader(
+        fileUploader: FileUploader(
             auth.client, Uri.parse(config.value('issuer')),
             accessToken: () => auth.validAccessToken(config.id)),
       ).deploy(config, mode as String, includeBuild: kind == 'build');

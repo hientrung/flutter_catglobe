@@ -5,12 +5,12 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 /// Uploads permanent files using Catglobe's raw-stream Files API.
-class CgsFileUploader {
+class FileUploader {
   /// Creates an uploader using [client], [issuer], and a current-token provider.
   ///
   /// Throws [ArgumentError] unless [issuer] is an HTTPS URL. The caller owns
   /// [client] and must close it when no longer needed.
-  CgsFileUploader(this.client, this.issuer, {required this.accessToken}) {
+  FileUploader(this.client, this.issuer, {required this.accessToken}) {
     if (issuer.scheme != 'https' || issuer.host.isEmpty) {
       throw ArgumentError.value(issuer, 'issuer', 'HTTPS origin required');
     }

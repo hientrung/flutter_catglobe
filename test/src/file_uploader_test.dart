@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:catglobe/src/cgs_file.dart';
+import 'package:catglobe/src/file_uploader.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
@@ -28,13 +28,13 @@ void main() {
   test('raw body contract preserves bytes and uses permanent Dashboard names',
       () async {
     final client = UploadClient();
-    final uploader = CgsFileUploader(client, Uri.parse('https://example.com/'),
+    final uploader = FileUploader(client, Uri.parse('https://example.com/'),
         accessToken: () => 'token');
     final result = await uploader.upload(42, {
       'assets/font.woff2': [0, 255, 128, 1],
       'main.dart.js': [10, 20],
     });
-    final name = CgsFileUploader.storageName(42, 'assets/font.woff2');
+    final name = FileUploader.storageName(42, 'assets/font.woff2');
     expect(client.requests.first.method, 'POST');
     expect(client.requests.first.url.path, '/api/files/upload/$name');
     expect(client.requests.first.headers['Authorization'], 'Bearer token');
@@ -44,16 +44,16 @@ void main() {
         'application/octet-stream');
     expect(client.payloads.first, [0, 255, 128, 1]);
     expect(result['assets/font.woff2']!.queryParameters['file'],
-        CgsFileUploader.storageName(42, 'assets/font.woff2'));
+        FileUploader.storageName(42, 'assets/font.woff2'));
     expect(result['main.dart.js']!.path, '/CgScript/File');
   });
 
   test('names avoid flattened path, Unicode and Dashboard collisions', () {
     final names = [
-      CgsFileUploader.storageName(42, 'a/b.js'),
-      CgsFileUploader.storageName(42, 'a_b.js'),
-      CgsFileUploader.storageName(43, 'a/b.js'),
-      CgsFileUploader.storageName(42, 'ảnh.js'),
+      FileUploader.storageName(42, 'a/b.js'),
+      FileUploader.storageName(42, 'a_b.js'),
+      FileUploader.storageName(43, 'a/b.js'),
+      FileUploader.storageName(42, 'ảnh.js'),
     ];
     expect(names.toSet().length, 4);
     expect(
@@ -63,7 +63,7 @@ void main() {
 
   test('empty file bodies are supported', () async {
     final client = UploadClient();
-    final uploader = CgsFileUploader(client, Uri.parse('https://example.com/'),
+    final uploader = FileUploader(client, Uri.parse('https://example.com/'),
         accessToken: () => 'token');
     await uploader.upload(42, {'empty.txt': []});
     expect(client.payloads.single, isEmpty);
@@ -71,7 +71,7 @@ void main() {
 
   test('invalid paths fail before sending', () async {
     final client = UploadClient();
-    final uploader = CgsFileUploader(client, Uri.parse('https://example.com/'),
+    final uploader = FileUploader(client, Uri.parse('https://example.com/'),
         accessToken: () => 'token');
     for (final files in [
       {
@@ -93,8 +93,7 @@ void main() {
       http.Response('{"success":true,"name":"wrong"}', 200),
     ]) {
       final client = MockClient((_) async => response);
-      final uploader = CgsFileUploader(
-          client, Uri.parse('https://example.com/'),
+      final uploader = FileUploader(client, Uri.parse('https://example.com/'),
           accessToken: () => 'token');
       await expectLater(
           uploader.upload(42, {

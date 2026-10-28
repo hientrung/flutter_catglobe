@@ -14,7 +14,7 @@ void main() {
         return http.Response('{"result":"name"}', 200);
       });
       addTearDown(transport.close);
-      final client = CatglobeWorkflowClient(
+      final client = CgScriptClient(
           debug: debug,
           issuer: Uri.parse('https://site.test/'),
           workflowIds: {'A': 1},
@@ -42,7 +42,7 @@ void main() {
       return http.Response('{"result":42}', 200);
     });
     addTearDown(transport.close);
-    final client = CatglobeWorkflowClient(debug: true, client: transport);
+    final client = CgScriptClient(debug: true, client: transport);
     await expectLater(
         Future.wait([
           client.run('A', parameter: null),
@@ -82,7 +82,7 @@ void main() {
       return http.Response('{"result":42}', 200);
     });
     addTearDown(transport.close);
-    final client = CatglobeWorkflowClient(debug: true, client: transport);
+    final client = CgScriptClient(debug: true, client: transport);
     expect(
         await client.run('A', parameter: [1, 2], expandParameters: true), 42);
     restarted = true;
@@ -117,7 +117,7 @@ void main() {
       return http.Response('{"result":42}', 200);
     });
     addTearDown(transport.close);
-    final client = CatglobeWorkflowClient(
+    final client = CgScriptClient(
         debug: true,
         localServer: Uri.parse('http://localhost:5678'),
         client: transport);
@@ -134,8 +134,8 @@ void main() {
       () async {
     final transport = MockClient((_) async => fail('No request expected'));
     addTearDown(transport.close);
-    final client = CatglobeWorkflowClient(
-        debug: true, accessToken: () => null, client: transport);
+    final client =
+        CgScriptClient(debug: true, accessToken: () => null, client: transport);
     await expectLater(client.run('A', parameter: null), throwsStateError);
   });
 
@@ -148,7 +148,7 @@ void main() {
     });
     addTearDown(transport.close);
     for (final debug in [true, false]) {
-      final client = CatglobeWorkflowClient(
+      final client = CgScriptClient(
           debug: debug,
           issuer: Uri.parse('https://site.test/dashboard/7'),
           workflowIds: {'Folder/A': 123},
@@ -173,7 +173,7 @@ void main() {
       return http.Response('{"result":null}', 200);
     });
     addTearDown(transport.close);
-    final client = CatglobeWorkflowClient(
+    final client = CgScriptClient(
         debug: false,
         issuer: Uri.parse('https://site.test/'),
         workflowIds: {'A': 1},
@@ -188,7 +188,7 @@ void main() {
         http.Response('{"result":null,"error":{"message":"failed"}}', 200));
     addTearDown(transport.close);
     for (final debug in [true, false]) {
-      final client = CatglobeWorkflowClient(
+      final client = CgScriptClient(
           debug: debug,
           issuer: Uri.parse('https://site.test/'),
           workflowIds: {'A': 1},

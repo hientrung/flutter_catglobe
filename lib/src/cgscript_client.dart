@@ -25,7 +25,7 @@ import 'workflow_ids_stub.dart'
 /// import 'package:flutter/foundation.dart';
 /// import 'package:catglobe/catglobe_client.dart';
 ///
-/// final workflows = CatglobeWorkflowClient(debug: kDebugMode);
+/// final workflows = CgScriptClient(debug: kDebugMode);
 /// try {
 ///   final result = await workflows.run('Folder/Name', parameter: {'customerId': 123});
 ///   print(result);
@@ -35,7 +35,7 @@ import 'workflow_ids_stub.dart'
 ///   workflows.close();
 /// }
 /// ```
-class CatglobeWorkflowClient {
+class CgScriptClient {
   /// Creates a workflow client with optional server and authentication settings.
   ///
   /// Pass Flutter's `kDebugMode` as [debug]. The default [issuer] is [Uri.base]
@@ -45,7 +45,7 @@ class CatglobeWorkflowClient {
   ///
   /// If [client] is supplied, its caller owns it and must close it separately.
   /// Otherwise, [close] releases the HTTP client created by this instance.
-  CatglobeWorkflowClient(
+  CgScriptClient(
       {required this.debug,
       Uri? issuer,
       Uri? localServer,

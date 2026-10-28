@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'config.dart';
-import 'cgs_file.dart';
+import 'file_uploader.dart';
 import 'flutter_assets.dart';
 import 'script_rewriter.dart';
 export 'script_rewriter.dart' show rewriteWorkflowReferences;
@@ -158,7 +158,7 @@ class CatglobeDeployment {
   final DeploymentAssets? assets;
 
   /// The standard Files API uploader used when [assets] is absent.
-  final CgsFileUploader? fileUploader;
+  final FileUploader? fileUploader;
 
   /// Deploys [config] to the `test` or `production` environment specified by [mode].
   ///
@@ -215,11 +215,11 @@ class CatglobeDeployment {
     }
     if (includeBuild && assets == null && fileUploader == null) {
       throw StateError(
-          'A CgsFileUploader is required. No resources were changed.');
+          'A FileUploader is required. No resources were changed.');
     }
     if (includeBuild && assets == null) {
       for (final entry in build.entries) {
-        CgsFileUploader.storageName(1, entry.key);
+        FileUploader.storageName(1, entry.key);
       }
     }
     final ids = <String, int>{};
@@ -256,7 +256,7 @@ class CatglobeDeployment {
         final urls = {
           for (final path in build.keys)
             path: uploader
-                .downloadUrl(CgsFileUploader.storageName(dashboardId, path))
+                .downloadUrl(FileUploader.storageName(dashboardId, path))
         };
         final transformed = <String, List<int>>{};
         for (final entry in build.entries) {

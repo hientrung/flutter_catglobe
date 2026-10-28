@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:catglobe/src/config.dart';
 import 'package:catglobe/src/deployment.dart';
-import 'package:catglobe/src/cgs_file.dart';
+import 'package:catglobe/src/file_uploader.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -248,11 +248,10 @@ new WorkflowScript(123).Call();
       scripts.add(s);
       return ++id;
     },
-        fileUploader: CgsFileUploader(client, Uri.parse('https://example.com/'),
+        fileUploader: FileUploader(client, Uri.parse('https://example.com/'),
             accessToken: () => 'token')).deploy(config, 'production');
     final dashboardId = result['dashboardId'] as int;
-    expect(
-        client.uploaded[CgsFileUploader.storageName(dashboardId, 'main.wasm')],
+    expect(client.uploaded[FileUploader.storageName(dashboardId, 'main.wasm')],
         [0, 255, 128, 1]);
     expect(scripts.last, contains('Live portal'));
     expect(scripts.last, contains('/CgScript/File?file='));
