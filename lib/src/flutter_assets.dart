@@ -23,17 +23,47 @@ const _runtime = r'''
   const resolve = (input, relativeTo = document.baseURI) => {
     const sourceBase = reverse.get(String(relativeTo)) || relativeTo;
     const url = new NativeURL(String(input), sourceBase);
-    // Flutter cache-busting parameters are irrelevant: names are deployment scoped.
+    // Resolve virtual paths to the current deployment's versioned URLs.
     const clean = new NativeURL(url.href); clean.search = ''; clean.hash = '';
     const target = forward.get(clean.href);
     return target ? target + url.hash : url.href;
   };
   globalThis.catglobeAssetUrl = resolve;
+  let validatingScriptURL = false;
+  // Flutter validates script pathname extensions. Uploaded query URLs have
+  // pathname /CgScript/File, so validate their original virtual paths first.
+  const trustedTypes = globalThis.trustedTypes;
+  if (trustedTypes) {
+    const createPolicy = trustedTypes.createPolicy.bind(trustedTypes);
+    trustedTypes.createPolicy = (name, rules) => {
+      if (name !== 'flutter-js' || typeof rules.createScriptURL !== 'function') {
+        return createPolicy(name, rules);
+      }
+      const validate = rules.createScriptURL;
+      return createPolicy(name, {
+        ...rules,
+        createScriptURL(input, ...args) {
+          const original = reverse.get(String(input)) || input;
+          let accepted;
+          const wasValidating = validatingScriptURL;
+          validatingScriptURL = true;
+          try {
+            accepted = validate.call(rules, original, ...args);
+          } finally {
+            validatingScriptURL = wasValidating;
+          }
+          return accepted == null || accepted === '' ? accepted : resolve(accepted);
+        }
+      });
+    };
+  }
   // Flutter constructs module/WASM URLs before dynamic import. Translate at
   // construction, including URLs relative to an uploaded module's import.meta.url.
   globalThis.URL = class extends NativeURL {
     constructor(input, relativeTo) {
-      super(resolve(input, relativeTo === undefined ? base : relativeTo));
+      super(validatingScriptURL
+        ? new NativeURL(input, relativeTo)
+        : resolve(input, relativeTo === undefined ? base : relativeTo));
     }
   };
   const nativeFetch = globalThis.fetch.bind(globalThis);
@@ -99,6 +129,18 @@ String rewriteAssetText(String text, String file, Map<String, Uri> urls) {
         (m) => 'url("${resolve(m[2]!)}")');
   }
   if (extension == '.js' || extension == '.mjs') {
+    // DevTools loads source maps independently of the runtime URL bridge.
+    text = text.replaceAllMapped(
+        RegExp(r'^([ \t]*//[#@][ \t]*sourceMappingURL=)(\S+)[ \t]*\r?$',
+            multiLine: true), (match) {
+      final value = match[2]!;
+      final uri = Uri.tryParse(value);
+      if (uri == null || uri.hasScheme || value.startsWith('//')) {
+        return match[0]!;
+      }
+      final mapped = resolve(value);
+      return mapped == value ? '' : '${match[1]}$mapped';
+    });
     // Static module specifiers bypass fetch and the URL constructor.
     return text.replaceAllMapped(
         RegExp(

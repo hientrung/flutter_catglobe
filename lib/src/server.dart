@@ -300,17 +300,14 @@ class DevelopmentServer {
     await for (final entity
         in directory.list(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
+      final relativePath = p.posix
+          .joinAll(p.split(p.relative(entity.path, from: directory.path)));
+      if (kind == 'build' && isExcludedBuildFile(relativePath)) continue;
       final bytes = await entity.readAsBytes();
       size += bytes.length;
       if (size > 50 * 1024 * 1024)
         throw StateError('Deployment exceeds 50 MiB');
-      files.add({
-        'path': p
-            .relative(entity.path, from: directory.path)
-            .split(p.separator)
-            .join('/'),
-        'contentBase64': base64Encode(bytes)
-      });
+      files.add({'path': relativePath, 'contentBase64': base64Encode(bytes)});
     }
     if (files.isEmpty) throw StateError('No deployment files found');
     final script = builder(config, kind as String, mode as String, files);

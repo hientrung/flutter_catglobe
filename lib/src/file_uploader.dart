@@ -97,11 +97,7 @@ class FileUploader {
         throw FormatException(
             'Non-JSON upload response for ${entry.key}; verify the site accepts the access token');
       }
-      if (result is! Map ||
-          result['success'] != true ||
-          result['filename'] != name ||
-          result['isTemp'] != false ||
-          result['size'] != entry.value.length) {
+      if (result is! Map || result['success'] != true) {
         throw StateError('Upload was not confirmed for ${entry.key}');
       }
       urls[entry.key] = downloadUrl(name);

@@ -261,7 +261,7 @@ when supplied it bypasses the built-in orchestrator.
 the body contains raw file bytes with `Content-Type: application/octet-stream`,
 and query parameters `overWrite=true` and `isTemp=false` select permanent storage.
 It sends the access token as a Bearer header, disables redirects and checks both
-HTTP status and the JSON `success`, `filename`, `isTemp` and `size` response. Filenames contain the Dashboard
+HTTP status and requires JSON `success: true`. Filenames contain the Dashboard
 ID, SHA-256 of the complete relative path, and the original extension, avoiding
 collisions when the server sanitizes directory separators. Bytes are unchanged.
 Its `upload` returns a map of local paths to `/CgScript/File?file=...` download URLs.
@@ -279,6 +279,24 @@ only uploaded copies of text files are transformed. Local build files are untouc
 Tests cover the mapping bridge and a simulated full deployment; no live Catglobe
 upload or full Flutter browser smoke test has been performed. Service-worker
 offline caching and arbitrary third-party worker loaders are not verified.
+
+Build deployment excludes `.last_build_id`, `assets/NOTICES`, and the root
+`canvaskit/` directory.
+When `manifest.json` is present, its uploaded `start_url` points to
+`/ol/ReportModule/DashboardModule/DashboardViewer5.aspx?rid=<dashboardId>` on
+the destination site. The local manifest remains unchanged.
+The deployment result includes `uploadedFiles`, a sorted list of uploaded
+build-relative paths, including the generated `catglobe-workflows.js`.
+`index.html` is saved as Dashboard layout and is not included in this list.
+Script-only deployments return an empty list.
+The default uploader adds `v=<buildHash>` to asset download URLs. The SHA-256
+hash covers build paths and contents, including the generated workflow map.
+Changed builds get new asset URLs when the updated Dashboard is loaded;
+open browser tabs are not automatically reloaded. The result also includes
+`buildHash` (`null` for script-only deployment).
+
+Use Flutter's default CDN configuration for renderer resources; builds using
+`--no-web-resources-cdn` or a local `canvasKitBaseUrl` need a CDN configuration.
 
 Files are read recursively with symlinks skipped and each input directory capped
 at 50 MiB. Run `flutter build web` in the consumer project first; this tool uploads

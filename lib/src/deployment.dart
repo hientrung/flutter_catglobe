@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'config.dart';
 import 'file_uploader.dart';
@@ -111,7 +112,7 @@ if (anonymousUser != empty) {
 
 String dashboardScript(String name, int parent, String? html) => '''
 ${findResource(name, 'Resource_Type_Dashboard', '$parent')}
-Dashboard dashboard;
+Dashboard dashboard = empty;
 if (resourceId == 0) {
   dashboard = new Dashboard("", ${cgString(name)}, "en-US");
   dashboard.Save(${cgString(name)}, $parent);
@@ -207,11 +208,20 @@ class CatglobeDeployment {
         ? await readDeploymentFiles(config, 'buildDirectory', 'build/web')
         : <String, List<int>>{};
     String? html;
+    Map<String, dynamic>? manifest;
     if (includeBuild) {
       if (!build.containsKey('index.html'))
         throw FormatException('Build requires index.html');
       html = utf8.decode(build['index.html']!);
       prepareDashboardHtml(html, {}, Uri.parse('https://preflight.invalid/'));
+      final manifestBytes = build['manifest.json'];
+      if (manifestBytes != null) {
+        final decoded = jsonDecode(utf8.decode(manifestBytes));
+        if (decoded is! Map<String, dynamic>) {
+          throw FormatException('Build manifest.json must be a JSON object');
+        }
+        manifest = decoded;
+      }
     }
     if (includeBuild && assets == null && fileUploader == null) {
       throw StateError(
@@ -242,10 +252,26 @@ class CatglobeDeployment {
               anonymousWorkflowScript(id, workflow.isPublic)));
     }
     int? dashboardId;
+    String? buildHash;
     if (includeBuild) {
       final name = mode == 'test' ? 'Test portal' : 'Live portal';
       dashboardId = await _id(dashboardScript(name, rootId, null));
+      if (manifest != null) {
+        final issuer =
+            fileUploader?.issuer ?? Uri.parse(config.value('issuer'));
+        manifest['start_url'] = issuer
+            .resolve('/ol/ReportModule/DashboardModule/DashboardViewer5.aspx')
+            .replace(queryParameters: {'rid': '$dashboardId'}).toString();
+        build['manifest.json'] = utf8.encode(jsonEncode(manifest));
+      }
       build['catglobe-workflows.js'] = utf8.encode(workflowMapScript(ids));
+      final paths = build.keys.toList()..sort();
+      buildHash = sha256
+          .convert(utf8.encode(jsonEncode([
+            for (final path in paths)
+              [path, sha256.convert(build[path]!).toString()]
+          ])))
+          .toString();
       build.remove('index.html');
       if (assets != null) {
         final base = await assets!.upload(dashboardId, build);
@@ -257,6 +283,10 @@ class CatglobeDeployment {
           for (final path in build.keys)
             path: uploader
                 .downloadUrl(FileUploader.storageName(dashboardId, path))
+                .replace(queryParameters: {
+              'file': FileUploader.storageName(dashboardId, path),
+              'v': buildHash,
+            })
         };
         final transformed = <String, List<int>>{};
         for (final entry in build.entries) {
@@ -273,7 +303,13 @@ class CatglobeDeployment {
             name, rootId, prepareFlatDashboardHtml(html!, ids, urls, base)));
       }
     }
-    return {'mode': mode, 'workflowIds': ids, 'dashboardId': dashboardId};
+    return {
+      'mode': mode,
+      'workflowIds': ids,
+      'dashboardId': dashboardId,
+      'buildHash': buildHash,
+      'uploadedFiles': build.keys.toList()..sort(),
+    };
   }
 
   Future<int> _id(String script) async {
@@ -285,6 +321,11 @@ class CatglobeDeployment {
     return result.toInt();
   }
 }
+
+bool isExcludedBuildFile(String relativePath) =>
+    p.posix.basename(relativePath) == '.last_build_id' ||
+    relativePath == 'assets/NOTICES' ||
+    relativePath.startsWith('canvaskit/');
 
 Future<Map<String, List<int>>> readDeploymentFiles(
     ProjectConfig config, String setting, String fallback) async {
@@ -305,10 +346,12 @@ Future<Map<String, List<int>>> readDeploymentFiles(
       .toList();
   entries.sort((a, b) => a.path.compareTo(b.path));
   for (final entry in entries.whereType<File>()) {
+    final path =
+        p.posix.joinAll(p.split(p.relative(entry.path, from: directory)));
+    if (setting == 'buildDirectory' && isExcludedBuildFile(path)) continue;
     size += await entry.length();
     if (size > 50 * 1024 * 1024) throw StateError('Deployment exceeds 50 MiB');
-    files[p.posix.joinAll(p.split(p.relative(entry.path, from: directory)))] =
-        await entry.readAsBytes();
+    files[path] = await entry.readAsBytes();
   }
   return files;
 }

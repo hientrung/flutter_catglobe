@@ -110,6 +110,37 @@ new WorkflowScript(123).Call();
   });
   tearDown(() => temp.delete(recursive: true));
 
+  test('build scan excludes metadata, CanvasKit and assets/NOTICES', () async {
+    final build = p.join(temp.path, 'build', 'web');
+    for (final path in [
+      '.last_build_id',
+      'assets/NOTICES',
+      'assets/NOTICES.txt',
+      'canvaskit/canvaskit.js',
+      'canvaskit/chromium/canvaskit.wasm',
+      'assets/canvaskit/icon.png',
+    ]) {
+      final file = File(p.joinAll([build, ...path.split('/')]));
+      await file.parent.create(recursive: true);
+      await file.writeAsString('content');
+    }
+    final files =
+        await readDeploymentFiles(config, 'buildDirectory', 'build/web');
+    expect(
+        files.keys,
+        unorderedEquals([
+          'index.html',
+          'main.wasm',
+          'assets/NOTICES.txt',
+          'assets/canvaskit/icon.png',
+        ]));
+    await File(p.join(temp.path, 'cgscript', '.last_build_id'))
+        .writeAsString('source');
+    final scripts =
+        await readDeploymentFiles(config, 'scriptDirectory', 'cgscript');
+    expect(scripts, contains('.last_build_id'));
+  });
+
   for (final mode in ['test', 'production']) {
     test('$mode filters blocks and adds a UTC deployment notice', () async {
       await File(p.join(temp.path, 'cgscript', 'A.cgs'))
@@ -170,6 +201,7 @@ new WorkflowScript(123).Call();
           reservations.any((s) => s.contains('workflow.Save("Folder_B", 101)')),
           isTrue);
       final ids = result['workflowIds'] as Map<String, int>;
+      expect(result['uploadedFiles'], isEmpty);
       expect(ids.keys, contains('FolderA/SubA/NameWorkflow'));
       final update = scripts
           .singleWhere((s) => s.contains('workflow.ImpersonatedUser = 123'));
@@ -216,6 +248,7 @@ new WorkflowScript(123).Call();
     expect(scripts.first, contains('Test Script'));
     expect(scripts.last, contains('Test portal'));
     expect(assets.dashboard, result['dashboardId']);
+    expect(result['uploadedFiles'], ['catglobe-workflows.js', 'main.wasm']);
     expect(assets.uploaded!['main.wasm'], [0, 255, 128, 1]);
     expect(assets.uploaded!.containsKey('index.html'), isFalse);
     expect(utf8.decode(assets.uploaded!['catglobe-workflows.js']!),
@@ -239,6 +272,42 @@ new WorkflowScript(123).Call();
     expect(calls, 0);
   });
 
+  for (final mode in ['test', 'production']) {
+    for (final customAssets in [false, true]) {
+      test(
+          '$mode manifest start_url points to Dashboard (custom: $customAssets)',
+          () async {
+        final file = File(p.join(temp.path, 'build', 'web', 'manifest.json'));
+        const original =
+            '{"name":"App","start_url":".","display":"standalone"}';
+        await file.writeAsString(original);
+        final assets = FakeAssets();
+        final client = FlatUploadClient();
+        addTearDown(client.close);
+        var id = 100;
+        final result = await CatglobeDeployment((_) async => ++id,
+                assets: customAssets ? assets : null,
+                fileUploader: customAssets
+                    ? null
+                    : FileUploader(client, Uri.parse('https://example.com/'),
+                        accessToken: () => 'token'))
+            .deploy(config, mode);
+        final dashboard = result['dashboardId'] as int;
+        final bytes = customAssets
+            ? assets.uploaded!['manifest.json']!
+            : client.uploaded[
+                FileUploader.storageName(dashboard, 'manifest.json')]!;
+        expect(jsonDecode(utf8.decode(bytes)), {
+          'name': 'App',
+          'start_url':
+              'https://example.com/ol/ReportModule/DashboardModule/DashboardViewer5.aspx?rid=$dashboard',
+          'display': 'standalone',
+        });
+        expect(await file.readAsString(), original);
+      });
+    }
+  }
+
   test('flat CgsFile build deploy uploads files and publishes mapped Dashboard',
       () async {
     final client = FlatUploadClient();
@@ -251,6 +320,7 @@ new WorkflowScript(123).Call();
         fileUploader: FileUploader(client, Uri.parse('https://example.com/'),
             accessToken: () => 'token')).deploy(config, 'production');
     final dashboardId = result['dashboardId'] as int;
+    expect(result['uploadedFiles'], ['catglobe-workflows.js', 'main.wasm']);
     expect(client.uploaded[FileUploader.storageName(dashboardId, 'main.wasm')],
         [0, 255, 128, 1]);
     expect(scripts.last, contains('Live portal'));
@@ -272,6 +342,39 @@ new WorkflowScript(123).Call();
     expect(scripts.last, contains('workflow.ImpersonatedUser = 0'));
     expect(scripts.last,
         contains('anonymousPermissions.Add(anonymousUser.ResourceId, "None")'));
+  });
+
+  test('asset URLs change with build contents and stay stable on redeploy',
+      () async {
+    final client = FlatUploadClient();
+    addTearDown(client.close);
+    final scripts = <String>[];
+    final deployer = CatglobeDeployment((script) async {
+      scripts.add(script);
+      return 123;
+    },
+        fileUploader: FileUploader(client, Uri.parse('https://example.com/'),
+            accessToken: () => 'token'));
+    final bootstrap =
+        File(p.join(temp.path, 'build', 'web', 'flutter_bootstrap.js'));
+    await bootstrap.writeAsString('const version = 1;');
+    final index = File(p.join(temp.path, 'build', 'web', 'index.html'));
+    await index.writeAsString(
+        '<html><head></head><body><script src="flutter_bootstrap.js"></script></body></html>');
+    final first = await deployer.deploy(config, 'test');
+    final hash = first['buildHash'] as String;
+    expect(hash, matches(RegExp(r'^[a-f0-9]{64}$')));
+    expect(scripts.last, contains('v=$hash'));
+    expect((await deployer.deploy(config, 'test'))['buildHash'], hash);
+    await bootstrap.writeAsString('const version = 2;');
+    final changed = await deployer.deploy(config, 'test');
+    expect(changed['buildHash'], isNot(hash));
+    expect(scripts.last, contains('v=${changed['buildHash']}'));
+    expect(scripts.last, isNot(contains('v=$hash')));
+    await index
+        .writeAsString('<html><head></head><body>new layout</body></html>');
+    expect((await deployer.deploy(config, 'test'))['buildHash'],
+        isNot(changed['buildHash']));
   });
 
   test('public workflow grants anonymous Access while retaining run-as user',

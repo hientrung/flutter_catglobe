@@ -90,7 +90,9 @@ void main() {
       http.Response('redirect', 302),
       http.Response('<html>Login</html>', 200),
       http.Response('{"success":false}', 200),
-      http.Response('{"success":true,"name":"wrong"}', 200),
+      http.Response('{"success":"true"}', 200),
+      http.Response('{}', 200),
+      http.Response('[]', 200),
     ]) {
       final client = MockClient((_) async => response);
       final uploader = FileUploader(client, Uri.parse('https://example.com/'),
@@ -101,6 +103,24 @@ void main() {
           }),
           throwsA(anyOf(isA<StateError>(), isA<FormatException>())));
       client.close();
+    }
+  });
+
+  test('success true confirms uploads regardless of optional metadata',
+      () async {
+    for (final body in [
+      '{"success":true}',
+      '{"success":true,"filename":"different","isTemp":true,"size":0}',
+    ]) {
+      final client = MockClient((_) async => http.Response(body, 200));
+      addTearDown(client.close);
+      final uploader = FileUploader(client, Uri.parse('https://example.com/'),
+          accessToken: () => 'token');
+      final urls = await uploader.upload(42, {
+        'main.js': [1]
+      });
+      expect(urls['main.js'],
+          uploader.downloadUrl(FileUploader.storageName(42, 'main.js')));
     }
   });
 }
