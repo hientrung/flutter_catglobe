@@ -195,12 +195,18 @@ the server rejects missing or unknown modes.
 
 The built-in `CatglobeDeployment` orchestrator requires a positive `rootFolderId`.
 It scans `.cgs` files recursively from `scriptDirectory` (default `cgscript`).
-`Folder/Name@123.public.cgs` becomes workflow `Name` in subfolder `Folder`,
+`Folder/Name@123.public.cgs` becomes workflow `Folder_Name` directly in the mode folder,
 with lookup key `Folder/Name` and impersonated user 123. Both suffixes are
 optional, but `.public` requires a positive `@userId`. Duplicate lookup keys and
-missing named dependencies fail before any remote writes.
+missing named dependencies fail before any remote writes. Flattened name
+collisions (for example, `Folder/Name.cgs` and `Folder_Name.cgs`) also fail
+before any remote writes.
 
-Test workflows live below `Test Script`; production workflows below `Live Script`.
+Test workflows live directly in `Test Script`; production workflows directly in
+`Live Script`. Local subdirectories become underscore-separated name prefixes;
+no matching remote subfolders are created. Existing resources in subfolders from
+older deployments are left in place; flattened workflows are created or reused
+in the mode folder.
 Resources are reused by exact name, type and direct parent, preserving their IDs
 on repeated deployments. The orchestrator first reserves all workflows, then
 replaces `new WorkflowScript("Folder/Name")` references with numeric IDs and

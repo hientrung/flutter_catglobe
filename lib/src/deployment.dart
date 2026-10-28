@@ -162,6 +162,9 @@ class CatglobeDeployment {
   /// Set [includeBuild] to `false` to deploy workflows only. Reserves workflow
   /// IDs before rewriting references, allowing cyclic deployed dependencies.
   /// Returns `mode`, `workflowIds`, and a nullable `dashboardId`.
+  /// Workflows are stored directly in `Test Script` or `Live Script`, with path
+  /// segments joined by underscores. Lookup keys retain their original paths.
+  /// Conflicting flattened names are rejected before remote writes.
   ///
   /// Validates local inputs before writing remote resources. Throws
   /// [FormatException] for invalid settings or sources and [StateError] when
@@ -177,11 +180,19 @@ class CatglobeDeployment {
     final scripts =
         await readDeploymentFiles(config, 'scriptDirectory', 'cgscript');
     final workflows = <String, LocalWorkflow>{};
+    final deploymentNames = <String, String>{};
     for (final entry in scripts.entries) {
       if (p.posix.extension(entry.key) != '.cgs') continue;
       final workflow = LocalWorkflow.parse(entry.key, utf8.decode(entry.value));
       if (workflows.containsKey(workflow.key))
         throw FormatException('Duplicate workflow key: ${workflow.key}');
+      final name = p.posix.split(workflow.key).join('_');
+      final previous = deploymentNames[name];
+      if (previous != null) {
+        throw FormatException(
+            'Duplicate deployment workflow name "$name": $previous and ${workflow.key}');
+      }
+      deploymentNames[name] = workflow.key;
       workflows[workflow.key] = workflow;
     }
     // All local validation precedes remote writes.
@@ -209,21 +220,12 @@ class CatglobeDeployment {
       }
     }
     final ids = <String, int>{};
-    final folderIds = <String, int>{};
     final modeFolder = await _id(
         folderScript(mode == 'test' ? 'Test Script' : 'Live Script', rootId));
-    folderIds['.'] = modeFolder;
-    Future<int> folder(String path) async {
-      if (folderIds.containsKey(path)) return folderIds[path]!;
-      final parent = await folder(p.posix.dirname(path));
-      return folderIds[path] =
-          await _id(folderScript(p.posix.basename(path), parent));
-    }
 
-    for (final workflow in workflows.values) {
-      final parent = await folder(p.posix.dirname(workflow.key));
-      ids[workflow.key] = await _id(
-          reserveWorkflowScript(p.posix.basename(workflow.key), parent));
+    for (final entry in deploymentNames.entries) {
+      ids[entry.value] =
+          await _id(reserveWorkflowScript(entry.key, modeFolder));
     }
     for (final workflow in workflows.values) {
       final id = ids[workflow.key]!;

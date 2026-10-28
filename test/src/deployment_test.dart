@@ -110,6 +110,54 @@ new WorkflowScript(123).Call();
   });
   tearDown(() => temp.delete(recursive: true));
 
+  for (final mode in ['test', 'production']) {
+    test('$mode deploy flattens nested names into the mode folder', () async {
+      final nested =
+          Directory(p.join(temp.path, 'cgscript', 'FolderA', 'SubA'));
+      await nested.create(recursive: true);
+      await File(p.join(nested.path, 'NameWorkflow@123.public.cgs'))
+          .writeAsString('new WorkflowScript("Folder/B").Call();');
+      final scripts = <String>[];
+      var nextId = 100;
+      final result = await CatglobeDeployment((script) async {
+        scripts.add(script);
+        return ++nextId;
+      }).deploy(config, mode, includeBuild: false);
+      expect(scripts.where((s) => s.contains('new Folder(')), hasLength(1));
+      expect(scripts.first,
+          contains(mode == 'test' ? 'Test Script' : 'Live Script'));
+      final reservations = scripts.where((s) => s.contains('return empty;'));
+      expect(reservations, hasLength(3));
+      expect(
+          reservations.any((s) =>
+              s.contains('workflow.Save("FolderA_SubA_NameWorkflow", 101)')),
+          isTrue);
+      expect(
+          reservations.any((s) => s.contains('workflow.Save("Folder_B", 101)')),
+          isTrue);
+      final ids = result['workflowIds'] as Map<String, int>;
+      expect(ids.keys, contains('FolderA/SubA/NameWorkflow'));
+      final update = scripts
+          .singleWhere((s) => s.contains('workflow.ImpersonatedUser = 123'));
+      expect(update, contains('new WorkflowScript(${ids['Folder/B']})'));
+    });
+  }
+
+  test('flattened name collisions fail before any remote write', () async {
+    await File(p.join(temp.path, 'cgscript', 'Folder_B.cgs'))
+        .writeAsString('return true;');
+    var calls = 0;
+    final deployer = CatglobeDeployment((_) async {
+      calls++;
+      return 100;
+    });
+    await expectLater(
+        deployer.deploy(config, 'test', includeBuild: false),
+        throwsA(isA<FormatException>().having((e) => e.message, 'message',
+            allOf(contains('Folder_B'), contains('Folder/B')))));
+    expect(calls, 0);
+  });
+
   test(
       'two passes support cycles and upload preserves bytes under dashboard ID',
       () async {
