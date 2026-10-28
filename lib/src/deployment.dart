@@ -114,7 +114,7 @@ String dashboardScript(String name, int parent, String? html) => '''
 ${findResource(name, 'Resource_Type_Dashboard', '$parent')}
 Dashboard dashboard = empty;
 if (resourceId == 0) {
-  dashboard = new Dashboard("", ${cgString(name)}, "en-US");
+  dashboard = new Dashboard("Please deploy again", ${cgString(name)}, "en-US");
   dashboard.Save(${cgString(name)}, $parent);
 } else {
   dashboard = new Dashboard(resourceId);
