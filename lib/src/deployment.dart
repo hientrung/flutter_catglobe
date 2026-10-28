@@ -218,15 +218,16 @@ class CatglobeDeployment {
           anonymousWorkflowScript(id, workflow.isPublic)));
     }
     int? dashboardId;
+    Uri? dashboardUrl;
     String? buildHash;
     if (includeBuild) {
       final name = mode == 'test' ? 'Test portal' : 'Live portal';
       dashboardId = await _id(dashboardScript(name, rootId, null));
+      dashboardUrl = fileUploader!.issuer
+          .resolve('/ol/ReportModule/DashboardModule/DashboardViewer5.aspx')
+          .replace(queryParameters: {'rid': '$dashboardId'});
       if (manifest != null) {
-        final issuer = fileUploader!.issuer;
-        manifest['start_url'] = issuer
-            .resolve('/ol/ReportModule/DashboardModule/DashboardViewer5.aspx')
-            .replace(queryParameters: {'rid': '$dashboardId'}).toString();
+        manifest['start_url'] = dashboardUrl.toString();
         build['manifest.json'] = utf8.encode(jsonEncode(manifest));
       }
       build['catglobe-workflows.js'] = utf8.encode(workflowMapScript(ids));
@@ -266,6 +267,7 @@ class CatglobeDeployment {
       'mode': mode,
       'workflowIds': ids,
       'dashboardId': dashboardId,
+      'dashboardUrl': dashboardUrl?.toString(),
       'buildHash': buildHash,
       'uploadedFiles': build.keys.toList()..sort(),
     };

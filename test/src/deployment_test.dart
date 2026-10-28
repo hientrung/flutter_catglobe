@@ -266,6 +266,8 @@ new WorkflowScript(123).Call();
           fileUploader: FileUploader(client, Uri.parse('https://example.com/'),
               accessToken: () => 'token')).deploy(config, mode);
       final dashboard = result['dashboardId'] as int;
+      expect(result['dashboardUrl'],
+          'https://example.com/ol/ReportModule/DashboardModule/DashboardViewer5.aspx?rid=$dashboard');
       final bytes = client
           .uploaded[FileUploader.storageName(dashboard, 'manifest.json')]!;
       expect(jsonDecode(utf8.decode(bytes)), {
