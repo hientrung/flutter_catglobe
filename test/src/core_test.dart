@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:catglobe_dev/catglobe_dev.dart';
-import 'package:catglobe_dev/src/auth.dart';
+import 'package:catglobe/catglobe.dart';
+import 'package:catglobe/src/auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';

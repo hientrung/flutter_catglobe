@@ -1,11 +1,11 @@
-# Publishing catglobe_dev
+# Publishing catglobe
 
 Official reference: https://dart.dev/tools/pub/publishing
 
 ## 1. Prepare the release
 
 - Sign in to pub.dev with the Google account that will own the package.
-- Check https://pub.dev/packages/catglobe_dev for name availability. If it already
+- Check https://pub.dev/packages/catglobe for name availability. If it already
   exists, you need publishing permission for it; a local dry run does not reserve
   or guarantee ownership of the name.
 - Review the included BSD 3-Clause LICENSE and confirm that it matches the
@@ -14,10 +14,7 @@ Official reference: https://dart.dev/tools/pub/publishing
 - Source repository and issue tracker are configured in `pubspec.yaml` for
   https://github.com/hientrung/flutter_catglobe. Verify repository visibility and
   access before publishing; optionally add `homepage` and `documentation`.
-- Review the version in `pubspec.yaml`. CHANGELOG is intentionally empty during
-  initialization; add the first release entry when preparing an actual release.
-  The current 0.1.0 release is explicitly a development preview. You may choose
-  `0.1.0-dev.1` instead; update README dependency examples to match.
+- Review version 0.1.0 in `pubspec.yaml` and the first release entry in CHANGELOG.md.
 - The remote execution/deployment API is provisional. For an end-to-end usable
   Catglobe release, implement the confirmed API and test it with a registered
   public PKCE client. Otherwise retain the preview limitations in the release.
@@ -32,7 +29,7 @@ dart pub get
 dart format --output=none --set-exit-if-changed lib bin test example
 dart analyze
 dart test
-dart run bin/catglobe_dev.dart --help
+dart run bin/catglobe.dart --help
 dart pub publish --dry-run
 ```
 
@@ -46,20 +43,20 @@ Also test from a separate Flutter consumer project using a path dependency:
 
 ```yaml
 dev_dependencies:
-  catglobe_dev:
+  catglobe:
     path: /absolute/path/to/this/repository
 ```
 
 ```sh
 flutter pub get
-dart run catglobe_dev --port 5000
+dart run catglobe --port 5000
 ```
 
 Verify web config editing/selection, a registered
 `http://localhost:5000/auth/callback` redirect URI and PKCE login.
 For remote operations, use the confirmed API and a test server/project.
-The package is a host-side Dart CLI; it belongs in `dev_dependencies` and is
-not imported by the Flutter app's browser or mobile runtime.
+Use `dev_dependencies` for CLI-only tooling. When the Flutter app imports
+`package:catglobe/catglobe_client.dart`, add `catglobe` to `dependencies`.
 
 ## 3. Publish manually
 
@@ -74,19 +71,19 @@ must be authorized to own the package name. For a verified organization publishe
 follow the current pub.dev publisher setup/transfer instructions in the official
 reference. Publication is persistent; use a new version for later changes.
 
-After upload, inspect https://pub.dev/packages/catglobe_dev and test installation
+After upload, inspect https://pub.dev/packages/catglobe and test installation
 in a clean Flutter project:
 
 ```sh
-flutter pub add --dev catglobe_dev
-dart run catglobe_dev --help
+flutter pub add --dev catglobe
+dart run catglobe --help
 ```
 
 Optionally install the executable globally:
 
 ```sh
-dart pub global activate catglobe_dev
-catglobe_dev --help
+dart pub global activate catglobe
+catglobe --help
 ```
 
 Ensure the Dart pub cache `bin` directory is on PATH for the global command.

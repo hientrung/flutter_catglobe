@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:catglobe_dev/src/auth.dart';
-import 'package:catglobe_dev/src/config.dart';
+import 'package:catglobe/src/auth.dart';
+import 'package:catglobe/src/config.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';

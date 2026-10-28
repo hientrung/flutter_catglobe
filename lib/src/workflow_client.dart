@@ -23,11 +23,11 @@ import 'workflow_ids_stub.dart'
 ///
 /// ```dart
 /// import 'package:flutter/foundation.dart';
-/// import 'package:catglobe_dev/catglobe_client.dart';
+/// import 'package:catglobe/catglobe_client.dart';
 ///
 /// final workflows = CatglobeWorkflowClient(debug: kDebugMode);
 /// try {
-///   final result = await workflows.run('Folder/Name', {'customerId': 123});
+///   final result = await workflows.run('Folder/Name', parameter: {'customerId': 123});
 ///   print(result);
 /// } on CgScriptException catch (error) {
 ///   print(error.error);
@@ -92,6 +92,7 @@ class CatglobeWorkflowClient {
   /// `.cgs`, `@userId`, or `.public` filename metadata. In debug, the local server
   /// reloads source files on each call. Online, [workflowIds] supplies the ID.
   ///
+  /// Omitted or null [parameter] is sent as an empty JSON array.
   /// By default, the script receives [parameter] as one argument at
   /// `Workflow_getParameters()[0]`. Set [expandParameters] to `true` and supply
   /// a JSON array to pass its elements as positional arguments instead.
@@ -101,8 +102,8 @@ class CatglobeWorkflowClient {
   /// Invalid names or server URLs throw [ArgumentError]; missing deployed IDs
   /// or unavailable local authentication throw [StateError]. Transport, timeout,
   /// and response decoding errors propagate to the caller.
-  Future<Object?> run(String name, Object? parameter,
-      {bool expandParameters = false}) async {
+  Future<Object?> run(String name,
+      {Object? parameter, bool expandParameters = false}) async {
     if (name.isEmpty ||
         name.split('/').any((s) => s.isEmpty || s == '.' || s == '..') ||
         name.contains('\\')) {
@@ -137,7 +138,7 @@ class CatglobeWorkflowClient {
       final request = http.Request('POST', endpoint)
         ..followRedirects = false
         ..headers['Content-Type'] = 'application/json'
-        ..body = jsonEncode(parameter);
+        ..body = jsonEncode(parameter ?? const []);
       if (token != null && token.isNotEmpty)
         request.headers['Authorization'] = 'Bearer $token';
       if (devToken != null) request.headers['X-Cg-Token'] = devToken;

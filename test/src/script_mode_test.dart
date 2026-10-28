@@ -1,4 +1,4 @@
-import 'package:catglobe_dev/src/script_rewriter.dart';
+import 'package:catglobe/src/script_rewriter.dart';
 import 'package:test/test.dart';
 
 void main() {

@@ -1,6 +1,6 @@
-# catglobe_dev
+# catglobe
 
-Development-only Dart package for Flutter projects. Provides a local web console,
+Dart package for Catglobe Flutter clients, local development, and deployment. Provides a local web console,
 shared project configuration, and Authorization Code + PKCE S256 authentication.
 No Flutter runtime dependency is needed for this host-side tool.
 
@@ -10,29 +10,20 @@ Add to your Flutter project's `pubspec.yaml`:
 
 ```yaml
 dev_dependencies:
-  catglobe_dev: ^0.1.0
+  catglobe: ^0.1.0
 ```
 
 ```sh
 flutter pub get
-dart run catglobe_dev --port 5000
+dart run catglobe --port 5000
 ```
 
 For development inside this repository: `dart pub get`, then
-`dart run bin/catglobe_dev.dart`. Options: `--no-open`, `--port`, `--data`.
+`dart run bin/catglobe.dart`. Options: `--no-open`, `--port`, `--data`.
 Stop with Ctrl+C. The server binds only to `127.0.0.1`.
 The console URL uses `http://localhost:5000` by default. Override the port with
 `--port 6000` to use `http://localhost:6000`. Redirect URI is derived from the
 running port, shown read-only in the console, and is not saved in project configs.
-
-The hosted dependency above becomes available after publication. Until then,
-use `catglobe_dev: {path: /absolute/path/to/this/repository}` under
-`dev_dependencies`. The repository directory does not need to match the package
-name. The old package/library/executable name `flutter_catglobe` is replaced by
-`catglobe_dev`; import `package:catglobe_dev/catglobe_dev.dart`.
-The shared config directory is now `catglobe_dev`; if you have existing data,
-copy the old `flutter_catglobe/projects.json` file to the new directory while
-the server is stopped, or point `--data` at the existing file.
 
 ## Publish to pub.dev
 
@@ -50,9 +41,9 @@ clears the selection and local authentication. Selecting the empty option also
 clears selection and authentication.
 Every startup requires a selection. Configs are shared across projects in:
 
-- Windows: `%APPDATA%/catglobe_dev/projects.json`
-- Linux: `$XDG_CONFIG_HOME/catglobe_dev/projects.json` (default `~/.config`)
-- macOS: `~/.config/catglobe_dev/projects.json`
+- Windows: `%APPDATA%/catglobe/projects.json`
+- Linux: `$XDG_CONFIG_HOME/catglobe/projects.json` (default `~/.config`)
+- macOS: `~/.config/catglobe/projects.json`
 
 Use absolute `projectPath`, relative `scriptDirectory` (e.g. `cgscript`) and
 `buildDirectory` (e.g. `build/web`).
@@ -64,7 +55,7 @@ Set issuer to the exact discovery issuer, including trailing slash:
 The client ID can remain empty until you register a public client with PKCE S256.
 Register `http://localhost:5000/auth/callback` as its redirect URI, matching your port.
 For example, `--port 6000` requires registering
-`http://localhost:6000/auth/callback`. Old saved redirect URI values are ignored.
+`http://localhost:6000/auth/callback`.
 No client secret is used. Scopes are fixed to
 `openid offline_access`; the client must
 be granted these permissions. Access tokens remain in memory, expire according to
@@ -83,7 +74,7 @@ an authenticated user identity or validate/use ID tokens as identity assertions.
 ## Remote execution / deployment contract (provisional)
 
 CGScript execution always uses `/api/cgscript/dynamicrun` on the issuer server;
-the endpoint and scopes cannot be edited. Old config overrides are ignored.
+the endpoint and scopes cannot be edited.
 Deployment creates and updates resources through `dynamicrun`; build assets
 are uploaded separately through `/api/files/upload/{saveAs}`.
 The dynamicrun request uses the payload below. CGScript upload/write functions
@@ -137,12 +128,12 @@ with HTTP 200. Source files are reloaded on each call.
 
 ### One Flutter call for debug and deployed apps
 
-For runtime use, add `catglobe_dev` under `dependencies` and import the web-safe
+For runtime use, add `catglobe` under `dependencies` and import the web-safe
 client library (the management/CLI library imports `dart:io`):
 
 ```dart
 import 'package:flutter/foundation.dart';
-import 'package:catglobe_dev/catglobe_client.dart';
+import 'package:catglobe/catglobe_client.dart';
 
 final workflows = CatglobeWorkflowClient(
   debug: kDebugMode,
@@ -152,9 +143,13 @@ final workflows = CatglobeWorkflowClient(
   // accessToken: () => authentication.getValidAccessToken(),
 );
 
-final result = await workflows.run('Folder/Name', {'customerId': 123});
+final result = await workflows.run('Folder/Name', parameter: {'customerId': 123});
 // workflows.close() when the owning service is disposed.
 ```
+
+The named `parameter` argument is optional and defaults to `null`. Omitted or
+null values are sent as an empty JSON array (`[]`), for example
+`workflows.run('GetUserName')`.
 
 `authentication.getValidAccessToken()` above represents your app's existing
 authentication provider. The callback is invoked for every call. In debug, the
@@ -228,9 +223,7 @@ before any remote writes.
 
 Test workflows live directly in `Test Script`; production workflows directly in
 `Live Script`. Local subdirectories become underscore-separated name prefixes;
-no matching remote subfolders are created. Existing resources in subfolders from
-older deployments are left in place; flattened workflows are created or reused
-in the mode folder.
+no matching remote subfolders are created.
 Resources are reused by exact name, type and direct parent, preserving their IDs
 on repeated deployments. The orchestrator first reserves all workflows, then
 replaces `new WorkflowScript("Folder/Name")` references with numeric IDs and
@@ -261,7 +254,7 @@ and upload using a directory URL via `DevelopmentServer(deploymentAssets: ...)`.
 Script-only deployment is available through `CatglobeDeployment.deploy` with
 `includeBuild: false`.
 
-The legacy `DeploymentScriptBuilder` override remains available for custom sites;
+A custom `DeploymentScriptBuilder` can be supplied for custom sites;
 when supplied it bypasses the built-in orchestrator.
 
 `CgsFileUploader` implements the site's `POST /api/files/upload/{saveAs}` contract:

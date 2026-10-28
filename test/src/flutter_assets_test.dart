@@ -1,4 +1,4 @@
-import 'package:catglobe_dev/src/flutter_assets.dart';
+import 'package:catglobe/src/flutter_assets.dart';
 import 'package:test/test.dart';
 
 void main() {

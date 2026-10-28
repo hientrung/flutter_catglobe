@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'package:catglobe_dev/catglobe_dev.dart';
+import 'package:catglobe/catglobe.dart';
 
-// For normal use, run `dart run catglobe_dev` instead.
+// For normal use, run `dart run catglobe` instead.
 Future<void> main() async {
   final server = DevelopmentServer(ConfigStore(ConfigStore.defaultFile()));
   await server.start();

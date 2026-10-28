@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:catglobe_dev/src/cgs_file.dart';
+import 'package:catglobe/src/cgs_file.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';

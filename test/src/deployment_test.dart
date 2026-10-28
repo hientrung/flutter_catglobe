@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:catglobe_dev/src/config.dart';
-import 'package:catglobe_dev/src/deployment.dart';
-import 'package:catglobe_dev/src/cgs_file.dart';
+import 'package:catglobe/src/config.dart';
+import 'package:catglobe/src/deployment.dart';
+import 'package:catglobe/src/cgs_file.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';

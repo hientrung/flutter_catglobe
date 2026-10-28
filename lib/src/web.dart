@@ -10,7 +10,7 @@ body{font:16px system-ui;background:#f2f5fa;color:#17243d;margin:0}main{max-widt
 <section><h2>Results</h2><pre id="result">Ready. Select a configuration to get started.</pre></section></main>
 <script>
 const token='__CSRF__';let configs=[],authenticated=false;
-const scriptStorageKey='catglobe_dev.testScript';
+const scriptStorageKey='catglobe.testScript';
 const scriptInput=document.querySelector('#script');
 try{scriptInput.value=localStorage.getItem(scriptStorageKey)??''}catch(e){console.warn('Unable to restore saved CGScript',e)}
 scriptInput.addEventListener('input',()=>{try{localStorage.setItem(scriptStorageKey,scriptInput.value)}catch(e){console.warn('Unable to save CGScript',e)}});

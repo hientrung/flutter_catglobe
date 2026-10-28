@@ -1,4 +1,4 @@
-import 'package:catglobe_dev/src/cgscript.dart';
+import 'package:catglobe/src/cgscript.dart';
 import 'package:test/test.dart';
 
 void main() {

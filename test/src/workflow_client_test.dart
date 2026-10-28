@@ -1,10 +1,32 @@
 import 'dart:convert';
-import 'package:catglobe_dev/catglobe_client.dart';
+import 'package:catglobe/catglobe_client.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
 void main() {
+  for (final debug in [true, false]) {
+    test('omitted and null parameters send an empty array (debug: $debug)',
+        () async {
+      final bodies = <String>[];
+      final transport = MockClient((request) async {
+        bodies.add(request.body);
+        return http.Response('{"result":"name"}', 200);
+      });
+      addTearDown(transport.close);
+      final client = CatglobeWorkflowClient(
+          debug: debug,
+          issuer: Uri.parse('https://site.test/'),
+          workflowIds: {'A': 1},
+          accessToken: () => 'token',
+          client: transport);
+      expect(await client.run('A'), 'name');
+      expect(await client.run('A', parameter: null), 'name');
+      expect(await client.run('A', expandParameters: true), 'name');
+      expect(bodies, ['[]', '[]', '[]']);
+    });
+  }
+
   test(
       'concurrent first runs share a token lookup and failed lookup can recover',
       () async {
@@ -22,10 +44,17 @@ void main() {
     addTearDown(transport.close);
     final client = CatglobeWorkflowClient(debug: true, client: transport);
     await expectLater(
-        Future.wait([client.run('A', null), client.run('B', null)]),
+        Future.wait([
+          client.run('A', parameter: null),
+          client.run('B', parameter: null)
+        ]),
         throwsStateError);
     expect(reads, 1);
-    expect(await Future.wait([client.run('A', null), client.run('B', null)]),
+    expect(
+        await Future.wait([
+          client.run('A', parameter: null),
+          client.run('B', parameter: null)
+        ]),
         [42, 42]);
     expect(reads, 2);
   });
@@ -54,13 +83,16 @@ void main() {
     });
     addTearDown(transport.close);
     final client = CatglobeWorkflowClient(debug: true, client: transport);
-    expect(await client.run('A', [1, 2], expandParameters: true), 42);
+    expect(
+        await client.run('A', parameter: [1, 2], expandParameters: true), 42);
     restarted = true;
-    expect(await client.run('A', [1, 2], expandParameters: true), 42);
+    expect(
+        await client.run('A', parameter: [1, 2], expandParameters: true), 42);
     expect(reads, 2);
     expect(posts, 3);
     scriptError = true;
-    await expectLater(client.run('A', [1, 2], expandParameters: true),
+    await expectLater(
+        client.run('A', parameter: [1, 2], expandParameters: true),
         throwsA(isA<CgScriptException>()));
     expect(reads, 2);
     expect(posts, 4);
@@ -89,11 +121,11 @@ void main() {
         debug: true,
         localServer: Uri.parse('http://localhost:5678'),
         client: transport);
-    expect(await client.run('Folder/A', {'id': 7}), 42);
-    expect(await client.run('Folder/A', {'id': 7}), 42);
+    expect(await client.run('Folder/A', parameter: {'id': 7}), 42);
+    expect(await client.run('Folder/A', parameter: {'id': 7}), 42);
     expect(
-        await Future.wait(
-            List.generate(3, (_) => client.run('Folder/A', {'id': 7}))),
+        await Future.wait(List.generate(
+            3, (_) => client.run('Folder/A', parameter: {'id': 7}))),
         everyElement(42));
     expect(sessionReads, 1);
   });
@@ -104,7 +136,7 @@ void main() {
     addTearDown(transport.close);
     final client = CatglobeWorkflowClient(
         debug: true, accessToken: () => null, client: transport);
-    await expectLater(client.run('A', null), throwsStateError);
+    await expectLater(client.run('A', parameter: null), throwsStateError);
   });
 
   test('debug paths and deployed IDs share JSON parameters and decoded results',
@@ -122,7 +154,7 @@ void main() {
           workflowIds: {'Folder/A': 123},
           client: transport,
           accessToken: () async => 'token');
-      expect(await client.run('Folder/A', {'id': 7}), {'value': 42});
+      expect(await client.run('Folder/A', parameter: {'id': 7}), {'value': 42});
     }
     expect(requests[0].url.toString(),
         'http://localhost:5000/api/cgscript/run/Folder/A');
@@ -146,8 +178,9 @@ void main() {
         issuer: Uri.parse('https://site.test/'),
         workflowIds: {'A': 1},
         client: transport);
-    expect(await client.run('A', [1, 2], expandParameters: true), isNull);
-    await expectLater(client.run('Missing', {}), throwsStateError);
+    expect(await client.run('A', parameter: [1, 2], expandParameters: true),
+        isNull);
+    await expectLater(client.run('Missing', parameter: {}), throwsStateError);
   });
 
   test('both environments preserve Catglobe script errors', () async {
@@ -162,7 +195,7 @@ void main() {
           accessToken: () => 'token',
           client: transport);
       await expectLater(
-          client.run('A', null), throwsA(isA<CgScriptException>()));
+          client.run('A', parameter: null), throwsA(isA<CgScriptException>()));
     }
   });
 }

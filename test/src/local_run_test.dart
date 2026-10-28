@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:catglobe_dev/catglobe_dev.dart';
-import 'package:catglobe_dev/catglobe_client.dart';
-import 'package:catglobe_dev/src/script_rewriter.dart';
+import 'package:catglobe/catglobe.dart';
+import 'package:catglobe/catglobe_client.dart';
+import 'package:catglobe/src/script_rewriter.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
@@ -196,7 +196,7 @@ void main() {
     addTearDown(browserTransport.close);
     final workflows = CatglobeWorkflowClient(
         debug: true, localServer: server.url, client: browserTransport);
-    expect(await workflows.run('A', [1, 2], expandParameters: true),
+    expect(await workflows.run('A', parameter: [1, 2], expandParameters: true),
         {'value': 42});
     final sessionPreflight = await client.send(http.Request('OPTIONS', endpoint)
       ..headers['Origin'] = 'http://localhost:8080'
@@ -216,6 +216,6 @@ void main() {
         403);
     server.auth.clear();
     await expectLater(
-        workflows.run('A', null), throwsA(isA<CgScriptException>()));
+        workflows.run('A', parameter: null), throwsA(isA<CgScriptException>()));
   });
 }

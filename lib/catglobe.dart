@@ -1,7 +1,7 @@
 /// Local development server, project configuration, and deployment tools.
 ///
 /// This library requires `dart:io`. Flutter runtime code should import
-/// `package:catglobe_dev/catglobe_client.dart` instead.
+/// `package:catglobe/catglobe_client.dart` instead.
 library;
 
 export 'src/config.dart';

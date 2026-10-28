@@ -54,7 +54,7 @@ class ConfigStore {
         : env['XDG_CONFIG_HOME'] ??
             (env['HOME'] == null ? null : p.join(env['HOME']!, '.config'));
     if (base == null) throw StateError('Cannot locate user config directory');
-    return File(p.join(base, 'catglobe_dev', 'projects.json'));
+    return File(p.join(base, 'catglobe', 'projects.json'));
   }
 
   /// Reads saved projects, returning an empty list if [file] does not exist.
